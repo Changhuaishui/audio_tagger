@@ -1,5 +1,6 @@
 package com.example.tagger.model
 
+import android.graphics.Bitmap
 import android.net.Uri
 
 data class AudioMetadata(
@@ -16,7 +17,11 @@ data class AudioMetadata(
     var comment: String = "",
     val duration: Long = 0,
     val bitrate: Int = 0,
-    val sampleRate: Int = 0
+    val sampleRate: Int = 0,
+    // 封面相关
+    val coverArt: Bitmap? = null,          // 封面图片（用于显示）
+    val coverArtBytes: ByteArray? = null,  // 封面原始数据（用于保存）
+    val coverArtMimeType: String? = null   // 封面 MIME 类型
 ) {
     val formattedDuration: String
         get() {
@@ -33,4 +38,28 @@ data class AudioMetadata(
             .filter { it.isNotEmpty() }
             .joinToString(" - ")
             .ifEmpty { "未知" }
+
+    val hasCoverArt: Boolean
+        get() = coverArt != null || coverArtBytes != null
+
+    // ByteArray 需要自定义 equals/hashCode
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as AudioMetadata
+        return uri == other.uri &&
+                filePath == other.filePath &&
+                displayName == other.displayName &&
+                title == other.title &&
+                artist == other.artist &&
+                album == other.album &&
+                coverArtBytes.contentEquals(other.coverArtBytes)
+    }
+
+    override fun hashCode(): Int {
+        var result = uri.hashCode()
+        result = 31 * result + filePath.hashCode()
+        result = 31 * result + (coverArtBytes?.contentHashCode() ?: 0)
+        return result
+    }
 }

@@ -1,14 +1,18 @@
 package com.example.tagger.core
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import com.example.tagger.model.AudioMetadata
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
+import org.jaudiotagger.tag.images.ArtworkFactory
 import java.io.File
 import java.io.FileOutputStream
 import android.util.Log
+import java.io.ByteArrayOutputStream
 import java.util.logging.Level
 import java.util.logging.Logger
 
@@ -49,6 +53,12 @@ class TagEditor(private val context: Context) {
             val bitrate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull() ?: 0
             val mimeType = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE) ?: ""
 
+            // 读取封面
+            val coverBytes = retriever.embeddedPicture
+            val coverBitmap = coverBytes?.let { bytes ->
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }
+
             retriever.release()
 
             val format = when {
@@ -61,7 +71,7 @@ class TagEditor(private val context: Context) {
                 else -> file.extension.uppercase().ifEmpty { "Unknown" }
             }
 
-            Log.d(TAG, "MediaMetadataRetriever succeeded: format=$format, duration=${durationMs/1000}s")
+            Log.d(TAG, "MediaMetadataRetriever succeeded: format=$format, duration=${durationMs/1000}s, hasCover=${coverBytes != null}")
 
             AudioMetadata(
                 uri = uri,
@@ -77,7 +87,10 @@ class TagEditor(private val context: Context) {
                 comment = "",  // MediaMetadataRetriever 不支持 comment
                 duration = durationMs / 1000,
                 bitrate = bitrate / 1000,  // 转换为 kbps
-                sampleRate = 0  // MediaMetadataRetriever 不直接提供采样率
+                sampleRate = 0,  // MediaMetadataRetriever 不直接提供采样率
+                coverArt = coverBitmap,
+                coverArtBytes = coverBytes,
+                coverArtMimeType = "image/jpeg"  // MediaMetadataRetriever 不提供具体类型
             )
         } catch (e: Exception) {
             Log.e(TAG, "MediaMetadataRetriever failed: ${e.message}")
@@ -95,7 +108,15 @@ class TagEditor(private val context: Context) {
             val tag = audio.tag
             val header = audio.audioHeader
 
-            Log.d(TAG, "JAudioTagger succeeded: format=${header.format}")
+            // 读取封面
+            val artwork = tag?.firstArtwork
+            val coverBytes = artwork?.binaryData
+            val coverBitmap = coverBytes?.let { bytes ->
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }
+            val coverMimeType = artwork?.mimeType ?: "image/jpeg"
+
+            Log.d(TAG, "JAudioTagger succeeded: format=${header.format}, hasCover=${coverBytes != null}")
 
             AudioMetadata(
                 uri = uri,
@@ -111,7 +132,10 @@ class TagEditor(private val context: Context) {
                 comment = tag?.getFirst(FieldKey.COMMENT) ?: "",
                 duration = header.trackLength.toLong(),
                 bitrate = header.bitRateAsNumber.toInt(),
-                sampleRate = header.sampleRateAsNumber
+                sampleRate = header.sampleRateAsNumber,
+                coverArt = coverBitmap,
+                coverArtBytes = coverBytes,
+                coverArtMimeType = coverMimeType
             )
         } catch (e: Exception) {
             Log.e(TAG, "JAudioTagger failed: ${file.absolutePath}", e)
@@ -121,6 +145,7 @@ class TagEditor(private val context: Context) {
 
     /**
      * 从 Uri 读取（复制到缓存目录后读取）
+     * 自动从文件名解析并预填充空白的标题/艺术家
      */
     fun readFromUri(uri: Uri): AudioMetadata? {
         Log.d(TAG, "readFromUri: $uri")
@@ -130,7 +155,20 @@ class TagEditor(private val context: Context) {
             return null
         }
         Log.d(TAG, "copyToCache succeeded: ${tempFile.absolutePath}")
-        return read(tempFile, uri)
+        val metadata = read(tempFile, uri) ?: return null
+
+        // 如果标题和艺术家都为空，尝试从文件名解析
+        return if (metadata.title.isEmpty() && metadata.artist.isEmpty()) {
+            val parsed = parseFromFileName(metadata.displayName)
+            if (parsed != null) {
+                Log.d(TAG, "Auto-filled from filename: artist=${parsed.first}, title=${parsed.second}")
+                metadata.copy(artist = parsed.first, title = parsed.second)
+            } else {
+                metadata
+            }
+        } else {
+            metadata
+        }
     }
 
     /**
@@ -147,6 +185,20 @@ class TagEditor(private val context: Context) {
         if (metadata.track.isNotEmpty()) tag.setField(FieldKey.TRACK, metadata.track)
         if (metadata.genre.isNotEmpty()) tag.setField(FieldKey.GENRE, metadata.genre)
         if (metadata.comment.isNotEmpty()) tag.setField(FieldKey.COMMENT, metadata.comment)
+
+        // 写入封面
+        metadata.coverArtBytes?.let { bytes ->
+            try {
+                tag.deleteArtworkField()  // 先删除旧封面
+                val artwork = ArtworkFactory.getNew()
+                artwork.binaryData = bytes
+                artwork.mimeType = metadata.coverArtMimeType ?: "image/jpeg"
+                tag.setField(artwork)
+                Log.d(TAG, "Cover art written successfully")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to write cover art: ${e.message}")
+            }
+        }
 
         audio.commit()
         true
@@ -239,5 +291,38 @@ class TagEditor(private val context: Context) {
                 item
             }
         }
+    }
+
+    /**
+     * 从图片 Uri 加载封面数据
+     * @return Pair<Bitmap, ByteArray>? 封面图片和原始字节数据
+     */
+    fun loadCoverFromUri(imageUri: Uri): Triple<Bitmap, ByteArray, String>? {
+        return try {
+            val inputStream = context.contentResolver.openInputStream(imageUri) ?: return null
+            val bytes = inputStream.use { it.readBytes() }
+
+            // 解析图片
+            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+
+            // 获取 MIME 类型
+            val mimeType = context.contentResolver.getType(imageUri) ?: "image/jpeg"
+
+            Log.d(TAG, "Loaded cover image: ${bitmap.width}x${bitmap.height}, ${bytes.size} bytes, $mimeType")
+
+            Triple(bitmap, bytes, mimeType)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load cover from uri: $imageUri", e)
+            null
+        }
+    }
+
+    /**
+     * 将 Bitmap 转换为 ByteArray（用于保存用户选择的图片）
+     */
+    fun bitmapToBytes(bitmap: Bitmap, quality: Int = 90): ByteArray {
+        val stream = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
+        return stream.toByteArray()
     }
 }

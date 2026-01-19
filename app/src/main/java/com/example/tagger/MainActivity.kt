@@ -75,7 +75,9 @@ class MainActivity : ComponentActivity() {
                         // 敏感词检测
                         onBatchCheckSensitive = { viewModel.batchCheckSensitive() },
                         onCheckSensitive = { viewModel.checkSensitiveWord(it) },
-                        onCloseSensitiveCheck = { viewModel.closeSensitiveCheck() }
+                        onCloseSensitiveCheck = { viewModel.closeSensitiveCheck() },
+                        // 封面选择
+                        onPickCover = { viewModel.updateSelectedItemCover(it) }
                     )
                 }
             }

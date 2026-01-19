@@ -1,13 +1,27 @@
 package com.example.tagger.ui
 
+import android.graphics.Bitmap
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -19,7 +33,8 @@ fun EditorDialog(
     metadata: AudioMetadata,
     sensitiveWords: Set<String>,
     onDismiss: () -> Unit,
-    onSave: (AudioMetadata) -> Unit
+    onSave: (AudioMetadata) -> Unit,
+    onPickCover: (Uri) -> Unit = {}  // 选择封面回调
 ) {
     var title by remember { mutableStateOf(metadata.title) }
     var artist by remember { mutableStateOf(metadata.artist) }
@@ -28,6 +43,25 @@ fun EditorDialog(
     var track by remember { mutableStateOf(metadata.track) }
     var genre by remember { mutableStateOf(metadata.genre) }
     var comment by remember { mutableStateOf(metadata.comment) }
+
+    // 封面状态
+    var coverBitmap by remember { mutableStateOf(metadata.coverArt) }
+    var coverBytes by remember { mutableStateOf(metadata.coverArtBytes) }
+    var coverMimeType by remember { mutableStateOf(metadata.coverArtMimeType) }
+
+    // 图片选择器
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { onPickCover(it) }
+    }
+
+    // 当外部传入新的封面时更新
+    LaunchedEffect(metadata.coverArt, metadata.coverArtBytes) {
+        coverBitmap = metadata.coverArt
+        coverBytes = metadata.coverArtBytes
+        coverMimeType = metadata.coverArtMimeType
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -53,7 +87,10 @@ fun EditorDialog(
                                         year = year,
                                         track = track,
                                         genre = genre,
-                                        comment = comment
+                                        comment = comment,
+                                        coverArt = coverBitmap,
+                                        coverArtBytes = coverBytes,
+                                        coverArtMimeType = coverMimeType
                                     )
                                 )
                             }
@@ -98,6 +135,68 @@ fun EditorDialog(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // 封面区域
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // 封面预览
+                    Box(
+                        modifier = Modifier
+                            .size(80.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .clickable { imagePickerLauncher.launch("image/*") },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (coverBitmap != null) {
+                            Image(
+                                bitmap = coverBitmap!!.asImageBitmap(),
+                                contentDescription = "封面",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = "无封面",
+                                modifier = Modifier.size(32.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "专辑封面",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        Text(
+                            text = if (coverBitmap != null) "点击更换封面" else "点击添加封面",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // 选择按钮
+                    FilledTonalButton(
+                        onClick = { imagePickerLauncher.launch("image/*") }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Photo,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("选择")
                     }
                 }
 

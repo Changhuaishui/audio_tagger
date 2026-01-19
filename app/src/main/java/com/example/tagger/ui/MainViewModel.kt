@@ -65,6 +65,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * 更新正在编辑的项目的封面
+     */
+    fun updateSelectedItemCover(imageUri: Uri) {
+        viewModelScope.launch {
+            val coverData = withContext(Dispatchers.IO) {
+                tagEditor.loadCoverFromUri(imageUri)
+            }
+
+            coverData?.let { (bitmap, bytes, mimeType) ->
+                val currentItem = _uiState.value.selectedItem ?: return@let
+                val updatedItem = currentItem.copy(
+                    coverArt = bitmap,
+                    coverArtBytes = bytes,
+                    coverArtMimeType = mimeType
+                )
+                _uiState.value = _uiState.value.copy(selectedItem = updatedItem)
+            }
+        }
+    }
+
+    /**
      * 保存编辑后的元数据
      */
     fun saveItem(item: AudioMetadata) {

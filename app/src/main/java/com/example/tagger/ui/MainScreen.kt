@@ -1,16 +1,23 @@
 package com.example.tagger.ui
 
+import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
@@ -32,7 +39,9 @@ fun MainScreen(
     // 敏感词检测
     onBatchCheckSensitive: () -> Unit = {},
     onCheckSensitive: (AudioMetadata) -> Unit = {},
-    onCloseSensitiveCheck: () -> Unit = {}
+    onCloseSensitiveCheck: () -> Unit = {},
+    // 封面选择
+    onPickCover: (Uri) -> Unit = {}
 ) {
     val uriHandler = LocalUriHandler.current
     var showMenu by remember { mutableStateOf(false) }
@@ -134,7 +143,8 @@ fun MainScreen(
             metadata = item,
             sensitiveWords = uiState.sensitiveWords,
             onDismiss = { onSelectItem(null) },
-            onSave = onSaveItem
+            onSave = onSaveItem,
+            onPickCover = onPickCover
         )
     }
 
@@ -226,14 +236,30 @@ private fun AudioItem(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                Icons.Default.MusicNote,
-                contentDescription = null,
+            // 封面或默认图标
+            Box(
                 modifier = Modifier
                     .size(48.dp)
-                    .padding(8.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                if (metadata.coverArt != null) {
+                    Image(
+                        bitmap = metadata.coverArt.asImageBitmap(),
+                        contentDescription = "封面",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        Icons.Default.MusicNote,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
