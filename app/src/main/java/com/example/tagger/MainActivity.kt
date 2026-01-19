@@ -77,7 +77,12 @@ class MainActivity : ComponentActivity() {
                         onCheckSensitive = { viewModel.checkSensitiveWord(it) },
                         onCloseSensitiveCheck = { viewModel.closeSensitiveCheck() },
                         // 封面选择
-                        onPickCover = { viewModel.updateSelectedItemCover(it) }
+                        onPickCover = { viewModel.updateSelectedItemCover(it) },
+                        // 多选模式
+                        onToggleSelectionMode = { viewModel.toggleSelectionMode() },
+                        onToggleItemSelection = { viewModel.toggleItemSelection(it) },
+                        onToggleSelectAll = { viewModel.toggleSelectAll() },
+                        onRemoveSelected = { viewModel.removeSelectedItems() }
                     )
                 }
             }

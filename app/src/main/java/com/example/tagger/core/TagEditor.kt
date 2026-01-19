@@ -18,6 +18,14 @@ import java.util.logging.Logger
 
 private const val TAG = "TagEditor"
 
+/**
+ * 标签写入结果
+ */
+sealed class WriteResult {
+    object Success : WriteResult()
+    data class Error(val message: String) : WriteResult()
+}
+
 class TagEditor(private val context: Context) {
 
     init {
@@ -172,59 +180,174 @@ class TagEditor(private val context: Context) {
     }
 
     /**
+     * 检查文件扩展名与实际格式是否匹配
+     */
+    private fun isFormatMatch(extension: String, actualFormat: String): Boolean {
+        return when (actualFormat) {
+            "MP3" -> extension in listOf("MP3")
+            "FLAC" -> extension in listOf("FLAC")
+            "M4A" -> extension in listOf("M4A", "MP4", "AAC")
+            "OGG" -> extension in listOf("OGG", "OGA")
+            "WAV" -> extension in listOf("WAV")
+            else -> true  // 未知格式不做限制
+        }
+    }
+
+    /**
+     * 根据格式获取正确的扩展名
+     */
+    private fun getExtensionForFormat(format: String): String {
+        return when (format) {
+            "MP3" -> "mp3"
+            "FLAC" -> "flac"
+            "M4A" -> "m4a"
+            "OGG" -> "ogg"
+            "WAV" -> "wav"
+            else -> "tmp"
+        }
+    }
+
+    /**
+     * 检测文件的实际格式（通过 MediaMetadataRetriever）
+     */
+    private fun detectActualFormat(file: File): String? {
+        return try {
+            val retriever = MediaMetadataRetriever()
+            retriever.setDataSource(file.absolutePath)
+            val mimeType = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE) ?: ""
+            retriever.release()
+
+            when {
+                mimeType.contains("flac", ignoreCase = true) -> "FLAC"
+                mimeType.contains("mp3", ignoreCase = true) || mimeType.contains("mpeg", ignoreCase = true) -> "MP3"
+                mimeType.contains("mp4", ignoreCase = true) || mimeType.contains("m4a", ignoreCase = true) -> "M4A"
+                mimeType.contains("ogg", ignoreCase = true) -> "OGG"
+                mimeType.contains("wav", ignoreCase = true) -> "WAV"
+                else -> null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
      * 写入元数据到文件
      */
-    fun write(file: File, metadata: AudioMetadata): Boolean = runCatching {
-        val audio = AudioFileIO.read(file)
-        val tag = audio.tagOrCreateAndSetDefault
+    fun write(file: File, metadata: AudioMetadata): WriteResult {
+        return try {
+            Log.d(TAG, "Writing tags to: ${file.absolutePath}")
+            Log.d(TAG, "Title: ${metadata.title}, Artist: ${metadata.artist}, Album: ${metadata.album}")
 
-        if (metadata.title.isNotEmpty()) tag.setField(FieldKey.TITLE, metadata.title)
-        if (metadata.artist.isNotEmpty()) tag.setField(FieldKey.ARTIST, metadata.artist)
-        if (metadata.album.isNotEmpty()) tag.setField(FieldKey.ALBUM, metadata.album)
-        if (metadata.year.isNotEmpty()) tag.setField(FieldKey.YEAR, metadata.year)
-        if (metadata.track.isNotEmpty()) tag.setField(FieldKey.TRACK, metadata.track)
-        if (metadata.genre.isNotEmpty()) tag.setField(FieldKey.GENRE, metadata.genre)
-        if (metadata.comment.isNotEmpty()) tag.setField(FieldKey.COMMENT, metadata.comment)
+            // 检测实际格式与扩展名是否匹配
+            val extension = file.extension.uppercase()
+            val actualFormat = detectActualFormat(file)
+            Log.d(TAG, "File extension: $extension, Actual format: $actualFormat")
 
-        // 写入封面
-        metadata.coverArtBytes?.let { bytes ->
-            try {
-                tag.deleteArtworkField()  // 先删除旧封面
-                val artwork = ArtworkFactory.getNew()
-                artwork.binaryData = bytes
-                artwork.mimeType = metadata.coverArtMimeType ?: "image/jpeg"
-                tag.setField(artwork)
-                Log.d(TAG, "Cover art written successfully")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to write cover art: ${e.message}")
+            // 如果格式不匹配，使用临时文件（正确扩展名）来写入
+            val workFile = if (actualFormat != null && !isFormatMatch(extension, actualFormat)) {
+                Log.w(TAG, "Format mismatch: extension=$extension, actual=$actualFormat. Using temp file with correct extension.")
+                val correctExt = getExtensionForFormat(actualFormat)
+                val tempFile = File(file.parent, "${file.nameWithoutExtension}.$correctExt")
+                file.copyTo(tempFile, overwrite = true)
+                tempFile
+            } else {
+                file
             }
-        }
 
-        audio.commit()
-        true
-    }.getOrDefault(false)
+            val audio = AudioFileIO.read(workFile)
+            val tag = audio.tagOrCreateAndSetDefault
+
+            // 无论是否为空都设置字段（允许清空）
+            tag.setField(FieldKey.TITLE, metadata.title)
+            tag.setField(FieldKey.ARTIST, metadata.artist)
+            tag.setField(FieldKey.ALBUM, metadata.album)
+            if (metadata.year.isNotEmpty()) tag.setField(FieldKey.YEAR, metadata.year)
+            if (metadata.track.isNotEmpty()) tag.setField(FieldKey.TRACK, metadata.track)
+            if (metadata.genre.isNotEmpty()) tag.setField(FieldKey.GENRE, metadata.genre)
+            if (metadata.comment.isNotEmpty()) tag.setField(FieldKey.COMMENT, metadata.comment)
+
+            // 写入封面
+            metadata.coverArtBytes?.let { bytes ->
+                try {
+                    tag.deleteArtworkField()
+                    val artwork = ArtworkFactory.getNew()
+                    artwork.binaryData = bytes
+                    artwork.mimeType = metadata.coverArtMimeType ?: "image/jpeg"
+                    tag.setField(artwork)
+                    Log.d(TAG, "Cover art written: ${bytes.size} bytes")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to write cover art: ${e.message}")
+                }
+            }
+
+            audio.commit()
+            Log.d(TAG, "Tags written successfully to: ${workFile.absolutePath}")
+
+            // 如果使用了临时文件，将内容复制回原文件
+            if (workFile != file) {
+                workFile.copyTo(file, overwrite = true)
+                workFile.delete()
+                Log.d(TAG, "Copied back to original file and deleted temp file")
+            }
+
+            WriteResult.Success
+        } catch (e: org.jaudiotagger.audio.exceptions.InvalidAudioFrameException) {
+            Log.e(TAG, "Invalid audio frame: ${e.message}", e)
+            WriteResult.Error("文件格式损坏或不支持，无法写入标签")
+        } catch (e: org.jaudiotagger.audio.exceptions.CannotReadException) {
+            Log.e(TAG, "Cannot read audio: ${e.message}", e)
+            WriteResult.Error("无法读取音频文件")
+        } catch (e: org.jaudiotagger.audio.exceptions.CannotWriteException) {
+            Log.e(TAG, "Cannot write audio: ${e.message}", e)
+            WriteResult.Error("无法写入音频文件，可能是权限问题")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to write tags: ${e.message}", e)
+            WriteResult.Error("保存失败: ${e.message ?: "未知错误"}")
+        }
+    }
 
     /**
      * 通过 Uri 写入（先复制到缓存，修改后写回）
      */
-    fun writeToUri(uri: Uri, metadata: AudioMetadata): Boolean {
-        val tempFile = copyToCache(uri) ?: return false
+    fun writeToUri(uri: Uri, metadata: AudioMetadata): WriteResult {
+        Log.d(TAG, "writeToUri: $uri")
 
-        if (!write(tempFile, metadata)) {
+        val tempFile = copyToCache(uri)
+        if (tempFile == null) {
+            Log.e(TAG, "Failed to copy to cache")
+            return WriteResult.Error("无法读取文件")
+        }
+
+        val writeResult = write(tempFile, metadata)
+        if (writeResult is WriteResult.Error) {
+            Log.e(TAG, "Failed to write tags to temp file")
             tempFile.delete()
-            return false
+            return writeResult
         }
 
         // 写回原文件
-        return runCatching {
-            context.contentResolver.openOutputStream(uri, "wt")?.use { output ->
+        return try {
+            val outputStream = context.contentResolver.openOutputStream(uri, "wt")
+            if (outputStream == null) {
+                Log.e(TAG, "Failed to open output stream for uri: $uri")
+                tempFile.delete()
+                return WriteResult.Error("无法写入原文件，可能是权限问题")
+            }
+
+            outputStream.use { output ->
                 tempFile.inputStream().use { input ->
-                    input.copyTo(output)
+                    val bytes = input.copyTo(output)
+                    Log.d(TAG, "Wrote $bytes bytes back to original file")
                 }
             }
             tempFile.delete()
-            true
-        }.getOrDefault(false)
+            Log.d(TAG, "writeToUri completed successfully")
+            WriteResult.Success
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to write back to uri: ${e.message}", e)
+            tempFile.delete()
+            WriteResult.Error("写回文件失败: ${e.message ?: "未知错误"}")
+        }
     }
 
     /**

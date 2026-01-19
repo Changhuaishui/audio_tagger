@@ -1,6 +1,5 @@
 package com.example.tagger.ui
 
-import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -9,12 +8,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Photo
+import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +26,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.tagger.model.AudioMetadata
+import com.example.tagger.ui.theme.AppleBlue
+import com.example.tagger.ui.theme.AppleGray1
+import com.example.tagger.ui.theme.AppleGray5
+import com.example.tagger.ui.theme.AppleGray6
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,7 +38,7 @@ fun EditorDialog(
     sensitiveWords: Set<String>,
     onDismiss: () -> Unit,
     onSave: (AudioMetadata) -> Unit,
-    onPickCover: (Uri) -> Unit = {}  // 选择封面回调
+    onPickCover: (Uri) -> Unit = {}
 ) {
     var title by remember { mutableStateOf(metadata.title) }
     var artist by remember { mutableStateOf(metadata.artist) }
@@ -44,19 +48,16 @@ fun EditorDialog(
     var genre by remember { mutableStateOf(metadata.genre) }
     var comment by remember { mutableStateOf(metadata.comment) }
 
-    // 封面状态
     var coverBitmap by remember { mutableStateOf(metadata.coverArt) }
     var coverBytes by remember { mutableStateOf(metadata.coverArtBytes) }
     var coverMimeType by remember { mutableStateOf(metadata.coverArtMimeType) }
 
-    // 图片选择器
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { onPickCover(it) }
     }
 
-    // 当外部传入新的封面时更新
     LaunchedEffect(metadata.coverArt, metadata.coverArtBytes) {
         coverBitmap = metadata.coverArt
         coverBytes = metadata.coverArtBytes
@@ -69,11 +70,21 @@ fun EditorDialog(
     ) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text("编辑标签") },
+                // Apple 风格顶栏
+                CenterAlignedTopAppBar(
+                    title = {
+                        Text(
+                            "编辑标签",
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                    },
                     navigationIcon = {
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, contentDescription = "关闭")
+                        TextButton(onClick = onDismiss) {
+                            Text(
+                                "取消",
+                                color = AppleBlue,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
                         }
                     },
                     actions = {
@@ -95,178 +106,290 @@ fun EditorDialog(
                                 )
                             }
                         ) {
-                            Text("保存")
+                            Text(
+                                "保存",
+                                color = AppleBlue,
+                                style = MaterialTheme.typography.titleMedium
+                            )
                         }
-                    }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            }
+            },
+            containerColor = MaterialTheme.colorScheme.background
         ) { padding ->
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(horizontal = 16.dp)
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // 封面区域 - 居中大图
+                Box(
+                    modifier = Modifier
+                        .size(160.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(AppleGray6)
+                        .clickable { imagePickerLauncher.launch("image/*") },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (coverBitmap != null) {
+                        Image(
+                            bitmap = coverBitmap!!.asImageBitmap(),
+                            contentDescription = "封面",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Outlined.MusicNote,
+                            contentDescription = "无封面",
+                            modifier = Modifier.size(64.dp),
+                            tint = AppleGray1
+                        )
+                    }
+
+                    // 相机图标叠加
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(AppleBlue),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Outlined.CameraAlt,
+                            contentDescription = "更换封面",
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // 文件信息（只读）
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
+                Text(
+                    "点击更换封面",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = AppleGray1
+                )
+
+                Spacer(modifier = Modifier.height(32.dp))
+
+                // 文件信息卡片
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface
                 ) {
                     Column(
-                        modifier = Modifier.padding(12.dp)
+                        modifier = Modifier.padding(16.dp)
                     ) {
                         Text(
-                            text = "文件信息",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = metadata.displayName,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = metadata.displayName,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Text(
-                            text = "${metadata.format} · ${metadata.formattedDuration} · ${metadata.bitrate}kbps · ${metadata.sampleRate}Hz",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "${metadata.format} · ${metadata.formattedDuration} · ${metadata.bitrate}kbps",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = AppleGray1
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(24.dp))
 
-                // 封面区域
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                // 表单区域
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface
                 ) {
-                    // 封面预览
-                    Box(
-                        modifier = Modifier
-                            .size(80.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .clickable { imagePickerLauncher.launch("image/*") },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (coverBitmap != null) {
-                            Image(
-                                bitmap = coverBitmap!!.asImageBitmap(),
-                                contentDescription = "封面",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.MusicNote,
-                                contentDescription = "无封面",
-                                modifier = Modifier.size(32.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
                     Column(
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Text(
-                            text = "专辑封面",
-                            style = MaterialTheme.typography.labelMedium
+                        // 标题
+                        AppleTextField(
+                            value = title,
+                            onValueChange = { title = it },
+                            label = "标题",
+                            sensitiveWords = sensitiveWords
                         )
-                        Text(
-                            text = if (coverBitmap != null) "点击更换封面" else "点击添加封面",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+
+                        HorizontalDivider(color = AppleGray5)
+
+                        // 艺术家
+                        AppleTextField(
+                            value = artist,
+                            onValueChange = { artist = it },
+                            label = "艺术家",
+                            sensitiveWords = sensitiveWords
+                        )
+
+                        HorizontalDivider(color = AppleGray5)
+
+                        // 专辑
+                        AppleTextField(
+                            value = album,
+                            onValueChange = { album = it },
+                            label = "专辑",
+                            sensitiveWords = sensitiveWords
                         )
                     }
-
-                    // 选择按钮
-                    FilledTonalButton(
-                        onClick = { imagePickerLauncher.launch("image/*") }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Photo,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("选择")
-                    }
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // 标题 - 使用敏感词检测输入框
-                SensitiveTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = "标题",
-                    sensitiveWords = sensitiveWords,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // 艺术家 - 使用敏感词检测输入框
-                SensitiveTextField(
-                    value = artist,
-                    onValueChange = { artist = it },
-                    label = "艺术家",
-                    sensitiveWords = sensitiveWords,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // 专辑 - 使用敏感词检测输入框
-                SensitiveTextField(
-                    value = album,
-                    onValueChange = { album = it },
-                    label = "专辑",
-                    sensitiveWords = sensitiveWords,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedTextField(
-                        value = year,
-                        onValueChange = { year = it },
-                        label = { Text("年份") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = track,
-                        onValueChange = { track = it },
-                        label = { Text("曲目") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                }
-
-                OutlinedTextField(
-                    value = genre,
-                    onValueChange = { genre = it },
-                    label = { Text("流派") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = comment,
-                    onValueChange = { comment = it },
-                    label = { Text("备注") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 2,
-                    maxLines = 4
-                )
 
                 Spacer(modifier = Modifier.height(16.dp))
+
+                // 更多信息
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            AppleTextField(
+                                value = year,
+                                onValueChange = { year = it },
+                                label = "年份",
+                                modifier = Modifier.weight(1f)
+                            )
+                            AppleTextField(
+                                value = track,
+                                onValueChange = { track = it },
+                                label = "曲目",
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        HorizontalDivider(color = AppleGray5)
+
+                        AppleTextField(
+                            value = genre,
+                            onValueChange = { genre = it },
+                            label = "流派"
+                        )
+
+                        HorizontalDivider(color = AppleGray5)
+
+                        AppleTextField(
+                            value = comment,
+                            onValueChange = { comment = it },
+                            label = "备注",
+                            singleLine = false,
+                            minLines = 2
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(40.dp))
             }
         }
+    }
+}
+
+/**
+ * Apple 风格的简洁输入框
+ */
+@Composable
+private fun AppleTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier,
+    sensitiveWords: Set<String> = emptySet(),
+    singleLine: Boolean = true,
+    minLines: Int = 1
+) {
+    val foundWords = remember(value, sensitiveWords) {
+        if (sensitiveWords.isEmpty() || value.isEmpty()) emptyList()
+        else {
+            val lowerText = value.lowercase()
+            sensitiveWords.filter { word ->
+                word.isNotEmpty() && lowerText.contains(word.lowercase())
+            }.take(3)
+        }
+    }
+
+    val hasSensitiveWords = foundWords.isNotEmpty()
+
+    Column(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (hasSensitiveWords) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    AppleGray1
+                }
+            )
+
+            // 敏感词提示
+            if (hasSensitiveWords) {
+                Text(
+                    text = foundWords.joinToString(" "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 简洁的无边框输入
+        TextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = MaterialTheme.typography.bodyLarge,
+            singleLine = singleLine,
+            minLines = minLines,
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = if (hasSensitiveWords) {
+                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                } else {
+                    AppleGray6
+                },
+                unfocusedContainerColor = if (hasSensitiveWords) {
+                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
+                } else {
+                    AppleGray6
+                },
+                focusedIndicatorColor = if (hasSensitiveWords) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    AppleBlue
+                },
+                unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                cursorColor = AppleBlue
+            ),
+            shape = RoundedCornerShape(10.dp)
+        )
     }
 }

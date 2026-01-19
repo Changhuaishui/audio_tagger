@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.tagger.core.SensitiveCheckResult
 import com.example.tagger.core.SensitiveWordChecker
 import com.example.tagger.core.TagEditor
+import com.example.tagger.core.WriteResult
 import com.example.tagger.model.AudioMetadata
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,7 +26,10 @@ data class MainUiState(
     val showSensitiveCheck: Boolean = false,
     val sensitiveCheckText: String = "",
     val sensitiveCheckResult: SensitiveCheckResult? = null,
-    val isSensitiveChecking: Boolean = false
+    val isSensitiveChecking: Boolean = false,
+    // 多选模式
+    val isSelectionMode: Boolean = false,
+    val selectedUris: Set<Uri> = emptySet()
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -92,26 +96,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
 
-            val success = withContext(Dispatchers.IO) {
+            val result = withContext(Dispatchers.IO) {
                 tagEditor.writeToUri(item.uri, item)
             }
 
-            if (success) {
-                // 更新列表中的项目
-                val updatedList = _uiState.value.audioList.map {
-                    if (it.uri == item.uri) item else it
+            when (result) {
+                is WriteResult.Success -> {
+                    // 更新列表中的项目
+                    val updatedList = _uiState.value.audioList.map {
+                        if (it.uri == item.uri) item else it
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        audioList = updatedList,
+                        selectedItem = null,
+                        isLoading = false,
+                        message = "保存成功"
+                    )
                 }
-                _uiState.value = _uiState.value.copy(
-                    audioList = updatedList,
-                    selectedItem = null,
-                    isLoading = false,
-                    message = "保存成功"
-                )
-            } else {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    message = "保存失败"
-                )
+                is WriteResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        message = result.message
+                    )
+                }
             }
         }
     }
@@ -137,17 +144,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(isLoading = true)
 
             var successCount = 0
+            var failCount = 0
             withContext(Dispatchers.IO) {
                 _uiState.value.audioList.forEach { item ->
-                    if (tagEditor.writeToUri(item.uri, item)) {
-                        successCount++
+                    when (tagEditor.writeToUri(item.uri, item)) {
+                        is WriteResult.Success -> successCount++
+                        is WriteResult.Error -> failCount++
                     }
                 }
             }
 
+            val message = if (failCount == 0) {
+                "已保存 $successCount 个文件"
+            } else {
+                "保存完成: $successCount 成功, $failCount 失败（部分文件格式不支持）"
+            }
+
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
-                message = "已保存 $successCount 个文件"
+                message = message
             )
         }
     }
@@ -164,7 +179,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 清空列表
      */
     fun clearAll() {
-        _uiState.value = _uiState.value.copy(audioList = emptyList())
+        _uiState.value = _uiState.value.copy(
+            audioList = emptyList(),
+            isSelectionMode = false,
+            selectedUris = emptySet()
+        )
     }
 
     /**
@@ -172,6 +191,64 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun clearMessage() {
         _uiState.value = _uiState.value.copy(message = null)
+    }
+
+    // ==================== 多选模式 ====================
+
+    /**
+     * 切换选择模式
+     */
+    fun toggleSelectionMode() {
+        val currentMode = _uiState.value.isSelectionMode
+        _uiState.value = _uiState.value.copy(
+            isSelectionMode = !currentMode,
+            selectedUris = emptySet()  // 退出选择模式时清空选中
+        )
+    }
+
+    /**
+     * 切换单个项目的选中状态
+     */
+    fun toggleItemSelection(item: AudioMetadata) {
+        val currentSelected = _uiState.value.selectedUris
+        val newSelected = if (currentSelected.contains(item.uri)) {
+            currentSelected - item.uri
+        } else {
+            currentSelected + item.uri
+        }
+        _uiState.value = _uiState.value.copy(selectedUris = newSelected)
+    }
+
+    /**
+     * 全选/取消全选
+     */
+    fun toggleSelectAll() {
+        val allUris = _uiState.value.audioList.map { it.uri }.toSet()
+        val currentSelected = _uiState.value.selectedUris
+        val newSelected = if (currentSelected.size == allUris.size) {
+            emptySet()  // 已全选，则取消全选
+        } else {
+            allUris  // 否则全选
+        }
+        _uiState.value = _uiState.value.copy(selectedUris = newSelected)
+    }
+
+    /**
+     * 移除选中的项目（从列表中移除，不删除源文件）
+     */
+    fun removeSelectedItems() {
+        val selectedUris = _uiState.value.selectedUris
+        if (selectedUris.isEmpty()) return
+
+        val updatedList = _uiState.value.audioList.filter { it.uri !in selectedUris }
+        val removedCount = _uiState.value.audioList.size - updatedList.size
+
+        _uiState.value = _uiState.value.copy(
+            audioList = updatedList,
+            selectedUris = emptySet(),
+            isSelectionMode = false,
+            message = "已移除 $removedCount 个文件"
+        )
     }
 
     /**

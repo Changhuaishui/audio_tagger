@@ -1,53 +1,127 @@
 package com.example.tagger.ui.theme
 
 import android.app.Activity
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
-)
+// ============================================
+// Apple 风格主题配置
+// 禁用动态颜色，保持统一风格
+// ============================================
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
+    // 主色调
+    primary = AppleBlue,
     onPrimary = Color.White,
+    primaryContainer = Color(0xFFE3F2FD),
+    onPrimaryContainer = AppleBlue,
+
+    // 次要色调
+    secondary = AppleGray1,
     onSecondary = Color.White,
+    secondaryContainer = AppleGray6,
+    onSecondaryContainer = AppleGray1,
+
+    // 第三色调
+    tertiary = AppleTeal,
     onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    tertiaryContainer = Color(0xFFE0F7FA),
+    onTertiaryContainer = AppleTeal,
+
+    // 错误色
+    error = AppleRed,
+    onError = Color.White,
+    errorContainer = Color(0xFFFFEBEE),
+    onErrorContainer = AppleRed,
+
+    // 背景
+    background = BackgroundLight,
+    onBackground = TextPrimaryLight,
+
+    // 表面
+    surface = SurfaceLight,
+    onSurface = TextPrimaryLight,
+    surfaceVariant = AppleGray6,
+    onSurfaceVariant = AppleGray1,
+
+    // 轮廓
+    outline = AppleGray4,
+    outlineVariant = AppleGray5,
+
+    // 其他
+    inverseSurface = AppleGrayDark6,
+    inverseOnSurface = TextPrimaryDark,
+    inversePrimary = AppleBlueDark,
+    surfaceTint = AppleBlue
+)
+
+private val DarkColorScheme = darkColorScheme(
+    // 主色调
+    primary = AppleBlueDark,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF003A75),
+    onPrimaryContainer = Color(0xFFD1E4FF),
+
+    // 次要色调
+    secondary = AppleGrayDark1,
+    onSecondary = Color.White,
+    secondaryContainer = AppleGrayDark5,
+    onSecondaryContainer = AppleGrayDark1,
+
+    // 第三色调
+    tertiary = AppleTeal,
+    onTertiary = Color.Black,
+    tertiaryContainer = Color(0xFF004D5B),
+    onTertiaryContainer = Color(0xFFB4EFF4),
+
+    // 错误色
+    error = AppleRedDark,
+    onError = Color.White,
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6),
+
+    // 背景
+    background = BackgroundDark,
+    onBackground = TextPrimaryDark,
+
+    // 表面
+    surface = SurfaceDark,
+    onSurface = TextPrimaryDark,
+    surfaceVariant = AppleGrayDark5,
+    onSurfaceVariant = AppleGrayDark1,
+
+    // 轮廓
+    outline = AppleGrayDark3,
+    outlineVariant = AppleGrayDark4,
+
+    // 其他
+    inverseSurface = AppleGray6,
+    inverseOnSurface = TextPrimaryLight,
+    inversePrimary = AppleBlue,
+    surfaceTint = AppleBlueDark
 )
 
 @Composable
 fun AudioTaggerTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+    // 设置状态栏样式
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as Activity).window
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+        }
     }
 
     MaterialTheme(
