@@ -371,4 +371,68 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             sensitiveCheckResult = null
         )
     }
+
+    // ==================== 修复扩展名功能 ====================
+
+    /**
+     * 修复文件扩展名（重命名文件）
+     */
+    fun fixFileExtension(item: AudioMetadata) {
+        if (!item.isFormatMismatch) {
+            _uiState.value = _uiState.value.copy(message = "文件扩展名正确，无需修复")
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+
+            val result = withContext(Dispatchers.IO) {
+                tagEditor.renameFile(item.uri, item.correctedDisplayName)
+            }
+
+            when (result) {
+                is RenameResult.Success -> {
+                    // 重新读取文件信息并更新列表
+                    val updatedItem = withContext(Dispatchers.IO) {
+                        tagEditor.readFromUri(result.newUri)
+                    }
+
+                    if (updatedItem != null) {
+                        val updatedList = _uiState.value.audioList.map {
+                            if (it.uri == item.uri) updatedItem else it
+                        }
+                        _uiState.value = _uiState.value.copy(
+                            audioList = updatedList,
+                            selectedItem = updatedItem,  // 更新选中项
+                            isLoading = false,
+                            message = "已修复: ${item.displayName} → ${updatedItem.displayName}"
+                        )
+                    } else {
+                        // 重命名成功但无法重新读取，从列表中移除
+                        val updatedList = _uiState.value.audioList.filter { it.uri != item.uri }
+                        _uiState.value = _uiState.value.copy(
+                            audioList = updatedList,
+                            selectedItem = null,
+                            isLoading = false,
+                            message = "已修复扩展名，但无法读取新文件"
+                        )
+                    }
+                }
+                is RenameResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        message = "修复失败: ${result.message}"
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 重命名操作结果
+ */
+sealed class RenameResult {
+    data class Success(val newUri: Uri) : RenameResult()
+    data class Error(val message: String) : RenameResult()
 }

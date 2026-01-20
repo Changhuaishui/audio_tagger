@@ -42,6 +42,66 @@ data class AudioMetadata(
     val hasCoverArt: Boolean
         get() = coverArt != null || coverArtBytes != null
 
+    /**
+     * 从文件扩展名获取的格式（可能不正确）
+     */
+    val extensionFormat: String
+        get() = displayName.substringAfterLast('.', "").uppercase()
+
+    /**
+     * 检测实际格式与扩展名是否匹配
+     */
+    val isFormatMismatch: Boolean
+        get() {
+            val ext = extensionFormat
+            val actual = format.uppercase()
+            if (ext.isEmpty() || actual.isEmpty()) return false
+
+            // 格式别名映射
+            val formatAliases = mapOf(
+                "M4A" to setOf("AAC", "ALAC", "M4A"),
+                "AAC" to setOf("AAC", "M4A"),
+                "MP3" to setOf("MP3", "MPEG"),
+                "OGG" to setOf("OGG", "VORBIS", "OPUS"),
+                "FLAC" to setOf("FLAC"),
+                "WAV" to setOf("WAV", "WAVE", "PCM"),
+                "WMA" to setOf("WMA"),
+                "APE" to setOf("APE")
+            )
+
+            val extAliases = formatAliases[ext] ?: setOf(ext)
+            val actualAliases = formatAliases[actual] ?: setOf(actual)
+
+            // 如果两个集合有交集，则认为匹配
+            return extAliases.intersect(actualAliases).isEmpty()
+        }
+
+    /**
+     * 获取正确的扩展名
+     */
+    val correctExtension: String
+        get() = when (format.uppercase()) {
+            "FLAC" -> "flac"
+            "MP3", "MPEG" -> "mp3"
+            "AAC", "ALAC" -> "m4a"
+            "OGG", "VORBIS" -> "ogg"
+            "OPUS" -> "opus"
+            "WAV", "WAVE", "PCM" -> "wav"
+            "WMA" -> "wma"
+            "APE" -> "ape"
+            else -> format.lowercase()
+        }
+
+    /**
+     * 生成修正扩展名后的文件名
+     */
+    val correctedDisplayName: String
+        get() {
+            if (!isFormatMismatch) return displayName
+            val nameWithoutExt = displayName.substringBeforeLast('.', displayName)
+            return "$nameWithoutExt.$correctExtension"
+        }
+
     // ByteArray 需要自定义 equals/hashCode
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

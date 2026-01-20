@@ -5,7 +5,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.provider.DocumentsContract
 import com.example.tagger.model.AudioMetadata
+import com.example.tagger.ui.RenameResult
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
 import org.jaudiotagger.tag.images.ArtworkFactory
@@ -447,5 +449,87 @@ class TagEditor(private val context: Context) {
         val stream = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
         return stream.toByteArray()
+    }
+
+    /**
+     * 重命名文件（修复扩展名）
+     * @param uri 原始文件 Uri
+     * @param newName 新文件名（包含扩展名）
+     * @return RenameResult 包含新的 Uri 或错误信息
+     */
+    fun renameFile(uri: Uri, newName: String): RenameResult {
+        return try {
+            Log.d(TAG, "Renaming file: $uri -> $newName")
+
+            // 检查是否是 DocumentsContract Uri
+            if (DocumentsContract.isDocumentUri(context, uri)) {
+                // 使用 DocumentsContract 重命名
+                val newUri = DocumentsContract.renameDocument(
+                    context.contentResolver,
+                    uri,
+                    newName
+                )
+                if (newUri != null) {
+                    Log.d(TAG, "Rename succeeded: $newUri")
+                    RenameResult.Success(newUri)
+                } else {
+                    Log.e(TAG, "Rename returned null Uri")
+                    RenameResult.Error("重命名失败：无法获取新文件位置")
+                }
+            } else {
+                // 尝试使用 ContentResolver 的 update 方法
+                // 注意：这对于大多数 content:// Uri 可能不起作用
+                Log.w(TAG, "Uri is not a DocumentUri, attempting alternative method")
+
+                // 尝试获取文件路径并直接重命名
+                val filePath = getFilePathFromUri(uri)
+                if (filePath != null) {
+                    val file = File(filePath)
+                    if (file.exists()) {
+                        val newFile = File(file.parent, newName)
+                        if (file.renameTo(newFile)) {
+                            Log.d(TAG, "Direct file rename succeeded: ${newFile.absolutePath}")
+                            RenameResult.Success(Uri.fromFile(newFile))
+                        } else {
+                            RenameResult.Error("重命名失败：无法修改文件")
+                        }
+                    } else {
+                        RenameResult.Error("文件不存在")
+                    }
+                } else {
+                    RenameResult.Error("不支持此类型的文件重命名，请使用文件管理器手动修改")
+                }
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "Security exception during rename", e)
+            RenameResult.Error("权限不足，无法重命名文件")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to rename file", e)
+            RenameResult.Error("重命名失败: ${e.message ?: "未知错误"}")
+        }
+    }
+
+    /**
+     * 尝试从 Uri 获取实际文件路径
+     */
+    private fun getFilePathFromUri(uri: Uri): String? {
+        return try {
+            when (uri.scheme) {
+                "file" -> uri.path
+                "content" -> {
+                    // 尝试从 MediaStore 或其他内容提供者获取路径
+                    context.contentResolver.query(uri, arrayOf("_data"), null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val columnIndex = cursor.getColumnIndex("_data")
+                            if (columnIndex >= 0) cursor.getString(columnIndex) else null
+                        } else null
+                    }
+                }
+                else -> null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get file path from uri", e)
+            null
+        }
     }
 }

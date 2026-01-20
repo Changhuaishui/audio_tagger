@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,7 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.tagger.model.AudioMetadata
-import com.example.tagger.ui.theme.AppleBlue
+import com.example.tagger.ui.theme.AppPrimaryColor
 import com.example.tagger.ui.theme.AppleGray1
 import com.example.tagger.ui.theme.AppleGray5
 import com.example.tagger.ui.theme.AppleGray6
@@ -38,7 +39,8 @@ fun EditorDialog(
     sensitiveWords: Set<String>,
     onDismiss: () -> Unit,
     onSave: (AudioMetadata) -> Unit,
-    onPickCover: (Uri) -> Unit = {}
+    onPickCover: (Uri) -> Unit = {},
+    onFixExtension: ((AudioMetadata) -> Unit)? = null  // 修复扩展名回调
 ) {
     var title by remember { mutableStateOf(metadata.title) }
     var artist by remember { mutableStateOf(metadata.artist) }
@@ -82,7 +84,7 @@ fun EditorDialog(
                         TextButton(onClick = onDismiss) {
                             Text(
                                 "取消",
-                                color = AppleBlue,
+                                color = AppPrimaryColor,
                                 style = MaterialTheme.typography.bodyLarge
                             )
                         }
@@ -108,7 +110,7 @@ fun EditorDialog(
                         ) {
                             Text(
                                 "保存",
-                                color = AppleBlue,
+                                color = AppPrimaryColor,
                                 style = MaterialTheme.typography.titleMedium
                             )
                         }
@@ -161,7 +163,7 @@ fun EditorDialog(
                             .padding(8.dp)
                             .size(36.dp)
                             .clip(CircleShape)
-                            .background(AppleBlue),
+                            .background(AppPrimaryColor),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -200,11 +202,85 @@ fun EditorDialog(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "${metadata.format} · ${metadata.formattedDuration} · ${metadata.bitrate}kbps",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = AppleGray1
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${metadata.format} · ${metadata.formattedDuration} · ${metadata.bitrate}kbps",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = AppleGray1
+                            )
+                            // 格式不匹配警告
+                            if (metadata.isFormatMismatch) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.Warning,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(12.dp),
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "扩展名错误",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 格式不匹配修复选项
+                        if (metadata.isFormatMismatch && onFixExtension != null) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "文件实际格式为 ${metadata.format}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "建议重命名为: ${metadata.correctedDisplayName}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = AppleGray1
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    TextButton(
+                                        onClick = { onFixExtension(metadata) },
+                                        colors = ButtonDefaults.textButtonColors(
+                                            contentColor = AppPrimaryColor
+                                        )
+                                    ) {
+                                        Text(
+                                            "修复",
+                                            style = MaterialTheme.typography.labelLarge
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -384,10 +460,10 @@ private fun AppleTextField(
                 focusedIndicatorColor = if (hasSensitiveWords) {
                     MaterialTheme.colorScheme.error
                 } else {
-                    AppleBlue
+                    AppPrimaryColor
                 },
                 unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                cursorColor = AppleBlue
+                cursorColor = AppPrimaryColor
             ),
             shape = RoundedCornerShape(10.dp)
         )

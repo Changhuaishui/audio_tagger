@@ -3,11 +3,15 @@ package com.example.tagger.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // ============================================
-// Apple 风格配色系统
-// 简洁、柔和、高级
+// Apple Music 风格配色系统
+// 简洁、柔和、高级 - 红色主题
 // ============================================
 
-// 主色调 - Apple 蓝
+// ★ App 主色调 - Apple Music 红 (修改这里可切换整个 App 的主题色)
+val AppPrimaryColor = Color(0xFFFC3C44)       // Apple Music 标志性红色
+val AppPrimaryColorDark = Color(0xFFFF453A)   // 深色模式
+
+// Apple 蓝 (保留，用于链接等特殊场景)
 val AppleBlue = Color(0xFF007AFF)
 val AppleBlueDark = Color(0xFF0A84FF)
 

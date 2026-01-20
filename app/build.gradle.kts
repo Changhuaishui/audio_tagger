@@ -5,9 +5,7 @@ plugins {
 
 android {
     namespace = "com.example.tagger"
-    compileSdk {
-        version = release(36)
-    }
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.tagger"
@@ -41,11 +39,15 @@ dependencies {
     // JAudioTagger for audio metadata
     implementation("net.jthink:jaudiotagger:3.0.1")
 
+    // FFmpegX-Android - maintained FFmpeg library for Android (replaces retired FFmpegKit)
+    // https://github.com/mzgs/FFmpegX-Android
+    implementation("com.github.mzgs:FFmpegX-Android:v2.2.1")
+
     // Core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
 
     // Compose
     implementation(platform(libs.androidx.compose.bom))

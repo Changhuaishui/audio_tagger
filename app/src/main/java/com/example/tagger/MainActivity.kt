@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -19,22 +20,47 @@ import androidx.core.content.ContextCompat
 import com.example.tagger.ui.MainScreen
 import com.example.tagger.ui.MainViewModel
 import com.example.tagger.ui.theme.AudioTaggerTheme
+import com.example.tagger.ui.video.VideoViewModel
 
 class MainActivity : ComponentActivity() {
 
-    private val viewModel: MainViewModel by viewModels()
+    companion object {
+        // 版本标记 - 用于验证新版本正在运行
+        const val VERSION_TAG = "v0120b_video_extract"
+        private const val TAG = "MainActivity"
+    }
 
-    private val permissionLauncher = registerForActivityResult(
+    private val viewModel: MainViewModel by viewModels()
+    private val videoViewModel: VideoViewModel by viewModels()
+
+    // 待执行的操作类型
+    private var pendingPickerType: PickerType? = null
+
+    private enum class PickerType {
+        AUDIO, VIDEO
+    }
+
+    private val audioPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            launchFilePicker()
+            launchAudioFilePicker()
         } else {
             Toast.makeText(this, "需要音频读取权限", Toast.LENGTH_SHORT).show()
         }
     }
 
-    private val filePickerLauncher = registerForActivityResult(
+    private val videoPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            launchVideoFilePicker()
+        } else {
+            Toast.makeText(this, "需要视频读取权限", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private val audioFilePickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris ->
         if (uris.isNotEmpty()) {
@@ -51,8 +77,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val videoFilePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            try {
+                contentResolver.takePersistableUriPermission(
+                    it,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) {}
+            videoViewModel.analyzeVideo(it)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 版本验证日志
+        Log.d(TAG, "========== 版本检查 ==========")
+        Log.d(TAG, "当前版本: $VERSION_TAG")
+        Log.d(TAG, "功能: 视频音轨提取")
+        Log.d(TAG, "===============================")
 
         setContent {
             AudioTaggerTheme {
@@ -61,10 +107,13 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val uiState by viewModel.uiState.collectAsState()
+                    val videoUiState by videoViewModel.uiState.collectAsState()
 
                     MainScreen(
                         uiState = uiState,
-                        onPickFiles = { checkPermissionAndPickFiles() },
+                        videoUiState = videoUiState,
+                        onPickFiles = { checkAudioPermissionAndPick() },
+                        onPickVideo = { checkVideoPermissionAndPick() },
                         onSelectItem = { viewModel.selectItem(it) },
                         onSaveItem = { viewModel.saveItem(it) },
                         onRemoveItem = { viewModel.removeItem(it) },
@@ -82,33 +131,66 @@ class MainActivity : ComponentActivity() {
                         onToggleSelectionMode = { viewModel.toggleSelectionMode() },
                         onToggleItemSelection = { viewModel.toggleItemSelection(it) },
                         onToggleSelectAll = { viewModel.toggleSelectAll() },
-                        onRemoveSelected = { viewModel.removeSelectedItems() }
+                        onRemoveSelected = { viewModel.removeSelectedItems() },
+                        // 视频提取
+                        onSelectVideoFormat = { videoViewModel.selectFormat(it) },
+                        onSelectVideoTrack = { videoViewModel.selectTrack(it) },
+                        onStartExtraction = { videoViewModel.startExtraction(videoUiState.extractionConfig) },
+                        onDismissFormatSelector = { videoViewModel.dismissFormatSelector() },
+                        onDismissProgressDialog = { videoViewModel.dismissProgressDialog() },
+                        onImportExtractedAudio = {
+                            videoUiState.extractedResult?.let { result ->
+                                viewModel.loadAudioFiles(listOf(result.audioUri))
+                                videoViewModel.clearExtractedResult()
+                            }
+                        },
+                        onClearVideoMessage = { videoViewModel.clearMessage() },
+                        // 修复扩展名
+                        onFixExtension = { viewModel.fixFileExtension(it) }
                     )
                 }
             }
         }
     }
 
-    private fun checkPermissionAndPickFiles() {
+    private fun checkAudioPermissionAndPick() {
         when {
             ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.READ_MEDIA_AUDIO
             ) == PackageManager.PERMISSION_GRANTED -> {
-                launchFilePicker()
+                launchAudioFilePicker()
             }
             shouldShowRequestPermissionRationale(Manifest.permission.READ_MEDIA_AUDIO) -> {
                 Toast.makeText(this, "需要音频读取权限来编辑标签", Toast.LENGTH_LONG).show()
-                permissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
+                audioPermissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
             }
             else -> {
-                permissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
+                audioPermissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
             }
         }
     }
 
-    private fun launchFilePicker() {
-        filePickerLauncher.launch(
+    private fun checkVideoPermissionAndPick() {
+        when {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_MEDIA_VIDEO
+            ) == PackageManager.PERMISSION_GRANTED -> {
+                launchVideoFilePicker()
+            }
+            shouldShowRequestPermissionRationale(Manifest.permission.READ_MEDIA_VIDEO) -> {
+                Toast.makeText(this, "需要视频读取权限来提取音轨", Toast.LENGTH_LONG).show()
+                videoPermissionLauncher.launch(Manifest.permission.READ_MEDIA_VIDEO)
+            }
+            else -> {
+                videoPermissionLauncher.launch(Manifest.permission.READ_MEDIA_VIDEO)
+            }
+        }
+    }
+
+    private fun launchAudioFilePicker() {
+        audioFilePickerLauncher.launch(
             arrayOf(
                 "audio/mpeg",
                 "audio/mp4",
@@ -117,6 +199,19 @@ class MainActivity : ComponentActivity() {
                 "audio/x-wav",
                 "audio/wav",
                 "audio/*"
+            )
+        )
+    }
+
+    private fun launchVideoFilePicker() {
+        videoFilePickerLauncher.launch(
+            arrayOf(
+                "video/mp4",
+                "video/x-matroska",
+                "video/webm",
+                "video/avi",
+                "video/quicktime",
+                "video/*"
             )
         )
     }

@@ -12,16 +12,16 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 // ============================================
-// Apple 风格主题配置
-// 禁用动态颜色，保持统一风格
+// Apple Music 风格主题配置
+// 禁用动态颜色，保持统一红色风格
 // ============================================
 
 private val LightColorScheme = lightColorScheme(
-    // 主色调
-    primary = AppleBlue,
+    // 主色调 - Apple Music 红
+    primary = AppPrimaryColor,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFE3F2FD),
-    onPrimaryContainer = AppleBlue,
+    primaryContainer = Color(0xFFFFE5E5),
+    onPrimaryContainer = AppPrimaryColor,
 
     // 次要色调
     secondary = AppleGray1,
@@ -58,16 +58,16 @@ private val LightColorScheme = lightColorScheme(
     // 其他
     inverseSurface = AppleGrayDark6,
     inverseOnSurface = TextPrimaryDark,
-    inversePrimary = AppleBlueDark,
-    surfaceTint = AppleBlue
+    inversePrimary = AppPrimaryColorDark,
+    surfaceTint = AppPrimaryColor
 )
 
 private val DarkColorScheme = darkColorScheme(
-    // 主色调
-    primary = AppleBlueDark,
+    // 主色调 - Apple Music 红 (深色模式)
+    primary = AppPrimaryColorDark,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFF003A75),
-    onPrimaryContainer = Color(0xFFD1E4FF),
+    primaryContainer = Color(0xFF5C0011),
+    onPrimaryContainer = Color(0xFFFFDAD6),
 
     // 次要色调
     secondary = AppleGrayDark1,
@@ -104,8 +104,8 @@ private val DarkColorScheme = darkColorScheme(
     // 其他
     inverseSurface = AppleGray6,
     inverseOnSurface = TextPrimaryLight,
-    inversePrimary = AppleBlue,
-    surfaceTint = AppleBlueDark
+    inversePrimary = AppPrimaryColor,
+    surfaceTint = AppPrimaryColorDark
 )
 
 @Composable

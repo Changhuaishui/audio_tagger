@@ -28,17 +28,24 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import com.example.tagger.core.SensitiveCheckResult
+import com.example.tagger.core.video.AudioFormat
+import com.example.tagger.core.video.ExtractionState
 import com.example.tagger.model.AudioMetadata
-import com.example.tagger.ui.theme.AppleBlue
+import com.example.tagger.ui.theme.AppPrimaryColor
 import com.example.tagger.ui.theme.AppleGray1
 import com.example.tagger.ui.theme.AppleGray5
 import com.example.tagger.ui.theme.AppleGray6
+import com.example.tagger.ui.video.ExtractionProgressDialog
+import com.example.tagger.ui.video.FormatSelectorSheet
+import com.example.tagger.ui.video.VideoUiState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     uiState: MainUiState,
+    videoUiState: VideoUiState = VideoUiState(),
     onPickFiles: () -> Unit,
+    onPickVideo: () -> Unit = {},
     onSelectItem: (AudioMetadata?) -> Unit,
     onSaveItem: (AudioMetadata) -> Unit,
     onRemoveItem: (AudioMetadata) -> Unit,
@@ -54,16 +61,35 @@ fun MainScreen(
     onToggleSelectionMode: () -> Unit = {},
     onToggleItemSelection: (AudioMetadata) -> Unit = {},
     onToggleSelectAll: () -> Unit = {},
-    onRemoveSelected: () -> Unit = {}
+    onRemoveSelected: () -> Unit = {},
+    // 视频提取
+    onSelectVideoFormat: (AudioFormat) -> Unit = {},
+    onSelectVideoTrack: (Int) -> Unit = {},
+    onStartExtraction: () -> Unit = {},
+    onDismissFormatSelector: () -> Unit = {},
+    onDismissProgressDialog: () -> Unit = {},
+    onImportExtractedAudio: () -> Unit = {},
+    onClearVideoMessage: () -> Unit = {},
+    // 修复扩展名
+    onFixExtension: (AudioMetadata) -> Unit = {}
 ) {
     val uriHandler = LocalUriHandler.current
     var showMenu by remember { mutableStateOf(false) }
+    var showFabMenu by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(uiState.message) {
         uiState.message?.let {
             snackbarHostState.showSnackbar(it)
             onClearMessage()
+        }
+    }
+
+    // 视频提取消息
+    LaunchedEffect(videoUiState.message) {
+        videoUiState.message?.let {
+            snackbarHostState.showSnackbar(it)
+            onClearVideoMessage()
         }
     }
 
@@ -87,14 +113,14 @@ fun MainScreen(
                     },
                     navigationIcon = {
                         TextButton(onClick = onToggleSelectionMode) {
-                            Text("取消", color = AppleBlue)
+                            Text("取消", color = AppPrimaryColor)
                         }
                     },
                     actions = {
                         TextButton(onClick = onToggleSelectAll) {
                             Text(
                                 if (uiState.selectedUris.size == uiState.audioList.size) "取消全选" else "全选",
-                                color = AppleBlue
+                                color = AppPrimaryColor
                             )
                         }
                     },
@@ -107,7 +133,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签",
+                            "音乐标签 [v0120b]", // 版本标记 - 视频提取功能
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
@@ -115,13 +141,13 @@ fun MainScreen(
                         if (uiState.audioList.isNotEmpty()) {
                             // 选择按钮
                             TextButton(onClick = onToggleSelectionMode) {
-                                Text("选择", color = AppleBlue)
+                                Text("选择", color = AppPrimaryColor)
                             }
                             IconButton(onClick = { showMenu = true }) {
                                 Icon(
                                     Icons.Outlined.MoreHoriz,
                                     contentDescription = "更多",
-                                    tint = AppleBlue
+                                    tint = AppPrimaryColor
                                 )
                             }
                             DropdownMenu(
@@ -136,7 +162,7 @@ fun MainScreen(
                                         showMenu = false
                                     },
                                     leadingIcon = {
-                                        Icon(Icons.Outlined.AutoFixHigh, null, tint = AppleBlue)
+                                        Icon(Icons.Outlined.AutoFixHigh, null, tint = AppPrimaryColor)
                                     }
                                 )
                                 DropdownMenuItem(
@@ -146,7 +172,7 @@ fun MainScreen(
                                         showMenu = false
                                     },
                                     leadingIcon = {
-                                        Icon(Icons.Outlined.CloudUpload, null, tint = AppleBlue)
+                                        Icon(Icons.Outlined.CloudUpload, null, tint = AppPrimaryColor)
                                     }
                                 )
                                 HorizontalDivider(
@@ -160,7 +186,7 @@ fun MainScreen(
                                         showMenu = false
                                     },
                                     leadingIcon = {
-                                        Icon(Icons.Outlined.Shield, null, tint = AppleBlue)
+                                        Icon(Icons.Outlined.Shield, null, tint = AppPrimaryColor)
                                     }
                                 )
                                 HorizontalDivider(
@@ -225,18 +251,48 @@ fun MainScreen(
         floatingActionButton = {
             // 非选择模式才显示 FAB
             if (!uiState.isSelectionMode) {
-                FloatingActionButton(
-                    onClick = onPickFiles,
-                    shape = CircleShape,
-                    containerColor = AppleBlue,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.shadow(
-                        elevation = 8.dp,
+                Box {
+                    FloatingActionButton(
+                        onClick = { showFabMenu = true },
                         shape = CircleShape,
-                        spotColor = AppleBlue.copy(alpha = 0.4f)
-                    )
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "添加文件")
+                        containerColor = AppPrimaryColor,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.shadow(
+                            elevation = 8.dp,
+                            shape = CircleShape,
+                            spotColor = AppPrimaryColor.copy(alpha = 0.4f)
+                        )
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "添加")
+                    }
+
+                    // FAB 下拉菜单
+                    DropdownMenu(
+                        expanded = showFabMenu,
+                        onDismissRequest = { showFabMenu = false },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("添加音频文件") },
+                            onClick = {
+                                onPickFiles()
+                                showFabMenu = false
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.MusicNote, null, tint = AppPrimaryColor)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("从视频提取音轨") },
+                            onClick = {
+                                onPickVideo()
+                                showFabMenu = false
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Outlined.VideoFile, null, tint = AppPrimaryColor)
+                            }
+                        )
+                    }
                 }
             }
         },
@@ -288,7 +344,7 @@ fun MainScreen(
                 exit = fadeOut()
             ) {
                 CircularProgressIndicator(
-                    color = AppleBlue,
+                    color = AppPrimaryColor,
                     strokeWidth = 3.dp
                 )
             }
@@ -302,7 +358,8 @@ fun MainScreen(
             sensitiveWords = uiState.sensitiveWords,
             onDismiss = { onSelectItem(null) },
             onSave = onSaveItem,
-            onPickCover = onPickCover
+            onPickCover = onPickCover,
+            onFixExtension = onFixExtension
         )
     }
 
@@ -316,6 +373,27 @@ fun MainScreen(
             onOpenOnlineTool = {
                 uriHandler.openUri("https://www.lingkechaci.com/")
             }
+        )
+    }
+
+    // 视频格式选择底部弹窗
+    if (videoUiState.showFormatSelector && videoUiState.videoMetadata != null) {
+        FormatSelectorSheet(
+            metadata = videoUiState.videoMetadata,
+            config = videoUiState.extractionConfig,
+            onFormatSelected = onSelectVideoFormat,
+            onTrackSelected = onSelectVideoTrack,
+            onStartExtraction = onStartExtraction,
+            onDismiss = onDismissFormatSelector
+        )
+    }
+
+    // 视频提取进度对话框
+    if (videoUiState.showProgressDialog) {
+        ExtractionProgressDialog(
+            state = videoUiState.extractionState,
+            onDismiss = onDismissProgressDialog,
+            onImportAudio = onImportExtractedAudio
         )
     }
 }
@@ -368,7 +446,7 @@ private fun EmptyState(onPickFiles: () -> Unit) {
             onClick = onPickFiles,
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = AppleBlue
+                containerColor = AppPrimaryColor
             ),
             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 14.dp)
         ) {
@@ -443,7 +521,7 @@ private fun AudioItem(
                 onLongClick = onLongClick
             ),
         shape = RoundedCornerShape(16.dp),
-        color = if (isSelected) AppleBlue.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surface,
+        color = if (isSelected) AppPrimaryColor.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surface,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
@@ -458,7 +536,7 @@ private fun AudioItem(
                         checked = isSelected,
                         onCheckedChange = null,  // 点击由父组件处理
                         colors = CheckboxDefaults.colors(
-                            checkedColor = AppleBlue,
+                            checkedColor = AppPrimaryColor,
                             uncheckedColor = AppleGray1
                         )
                     )
