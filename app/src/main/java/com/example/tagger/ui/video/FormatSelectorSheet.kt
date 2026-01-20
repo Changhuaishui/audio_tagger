@@ -18,8 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview
 import com.example.tagger.core.video.*
 import com.example.tagger.ui.theme.AppPrimaryColor
+import com.example.tagger.ui.theme.AudioTaggerTheme
 
 /**
  * Bottom sheet for selecting audio output format and track.
@@ -377,5 +379,60 @@ private fun FormatChip(
                 fontWeight = FontWeight.Medium
             )
         }
+    }
+}
+
+// ==================== Previews ====================
+
+@Preview(showBackground = true)
+@Composable
+private fun VideoInfoCardPreview() {
+    val metadata = VideoMetadata(
+        uri = android.net.Uri.EMPTY,
+        displayName = "演唱会现场 - 周杰伦.mp4",
+        durationMs = 3600000L,  // 1小时
+        fileSize = 1024L * 1024 * 500,  // 500MB
+        containerFormat = "mp4",
+        audioTracks = listOf(
+            AudioTrackInfo(
+                index = 0,
+                codec = "aac",
+                sampleRate = 48000,
+                channels = 2,
+                bitrate = 192000,
+                language = "chi"
+            )
+        )
+    )
+    AudioTaggerTheme {
+        VideoInfoCard(metadata)
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun FormatSelectorPreview() {
+    AudioTaggerTheme {
+        FormatSelector(
+            selectedFormat = AudioFormat.ORIGINAL,
+            originalCodec = "aac",
+            onFormatSelected = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun AudioTrackSelectorPreview() {
+    val tracks = listOf(
+        AudioTrackInfo(0, "aac", 48000, 2, 192000, "chi"),
+        AudioTrackInfo(1, "ac3", 48000, 6, 384000, "eng")
+    )
+    AudioTaggerTheme {
+        AudioTrackSelector(
+            tracks = tracks,
+            selectedIndex = 0,
+            onTrackSelected = {}
+        )
     }
 }

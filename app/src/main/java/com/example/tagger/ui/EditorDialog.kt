@@ -3,6 +3,8 @@ package com.example.tagger.ui
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.tooling.preview.Preview
+import com.example.tagger.ui.theme.AudioTaggerTheme
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -466,6 +468,58 @@ private fun AppleTextField(
                 cursorColor = AppPrimaryColor
             ),
             shape = RoundedCornerShape(10.dp)
+        )
+    }
+}
+
+// ==================== Preview ====================
+
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun EditorDialogPreview() {
+    AudioTaggerTheme {
+        EditorDialog(
+            metadata = AudioMetadata(
+                uri = Uri.EMPTY,
+                filePath = "/storage/emulated/0/Music/test.mp3",
+                displayName = "Coldplay - Viva La Vida.mp3",
+                format = "FLAC",  // 故意设置不匹配，展示警告
+                title = "Viva La Vida",
+                artist = "Coldplay",
+                album = "Viva la Vida",
+                year = "2008",
+                duration = 242,
+                bitrate = 916
+            ),
+            sensitiveWords = setOf("test", "敏感词"),
+            onDismiss = {},
+            onSave = {},
+            onPickCover = {},
+            onFixExtension = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun EditorDialogPreview_Clean() {
+    AudioTaggerTheme {
+        EditorDialog(
+            metadata = AudioMetadata(
+                uri = Uri.EMPTY,
+                filePath = "/storage/emulated/0/Music/test.flac",
+                displayName = "周杰伦 - 晴天.flac",
+                format = "FLAC",  // 匹配，无警告
+                title = "晴天",
+                artist = "周杰伦",
+                album = "叶惠美",
+                year = "2003",
+                duration = 269,
+                bitrate = 1411
+            ),
+            sensitiveWords = emptySet(),
+            onDismiss = {},
+            onSave = {}
         )
     }
 }

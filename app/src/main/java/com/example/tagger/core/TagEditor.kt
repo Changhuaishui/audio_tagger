@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.provider.DocumentsContract
 import com.example.tagger.model.AudioMetadata
@@ -275,8 +276,11 @@ class TagEditor(private val context: Context) {
                     val artwork = ArtworkFactory.getNew()
                     artwork.binaryData = bytes
                     artwork.mimeType = metadata.coverArtMimeType ?: "image/jpeg"
+                    // Set picture type to 3 (Front Cover) for proper recognition by music players
+                    // ID3v2 Picture Types: 0=Other, 1=FileIcon, 2=OtherFileIcon, 3=FrontCover, etc.
+                    artwork.pictureType = 3
                     tag.setField(artwork)
-                    Log.d(TAG, "Cover art written: ${bytes.size} bytes")
+                    Log.d(TAG, "Cover art written: ${bytes.size} bytes, type=FrontCover(3), mime=${artwork.mimeType}")
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to write cover art: ${e.message}")
                 }
@@ -343,6 +347,10 @@ class TagEditor(private val context: Context) {
                 }
             }
             tempFile.delete()
+
+            // Notify MediaScanner to refresh metadata in the system media library
+            notifyMediaScanner(uri, metadata.filePath)
+
             Log.d(TAG, "writeToUri completed successfully")
             WriteResult.Success
         } catch (e: Exception) {
@@ -530,6 +538,32 @@ class TagEditor(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to get file path from uri", e)
             null
+        }
+    }
+
+    /**
+     * Notify MediaScanner to refresh the file's metadata in system media library.
+     * This ensures updated tags (title, artist, cover art) appear in music players.
+     */
+    private fun notifyMediaScanner(uri: Uri, filePath: String?) {
+        try {
+            // Try to get actual file path if not provided
+            val actualPath = filePath ?: getFilePathFromUri(uri)
+
+            if (actualPath != null) {
+                Log.d(TAG, "Notifying MediaScanner for: $actualPath")
+                MediaScannerConnection.scanFile(
+                    context,
+                    arrayOf(actualPath),
+                    null // Let the system detect MIME type
+                ) { path, scannedUri ->
+                    Log.d(TAG, "MediaScanner completed: $path -> $scannedUri")
+                }
+            } else {
+                Log.w(TAG, "Could not get file path for MediaScanner, uri: $uri")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to notify MediaScanner", e)
         }
     }
 }

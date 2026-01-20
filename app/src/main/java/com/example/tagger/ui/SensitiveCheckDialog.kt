@@ -20,8 +20,10 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.tagger.core.FoundWord
 import com.example.tagger.core.SensitiveCheckResult
 import com.example.tagger.ui.theme.*
 
@@ -344,4 +346,103 @@ private fun HighlightedText(text: String, result: SensitiveCheckResult) {
         text = annotatedString,
         style = MaterialTheme.typography.bodyMedium
     )
+}
+
+// ==================== Previews ====================
+
+@Preview(showBackground = true)
+@Composable
+private fun LoadingStatePreview() {
+    AudioTaggerTheme {
+        Surface(modifier = Modifier.padding(24.dp)) {
+            LoadingState()
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun IdleStatePreview() {
+    AudioTaggerTheme {
+        Surface(modifier = Modifier.padding(24.dp)) {
+            IdleState()
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun CleanStatePreview() {
+    AudioTaggerTheme {
+        Surface(modifier = Modifier.padding(24.dp)) {
+            CleanState()
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun FoundStatePreview() {
+    val result = SensitiveCheckResult(
+        originalText = "这是一段包含敏感词的测试文本",
+        foundWords = listOf(
+            FoundWord("敏感词", 7, 10, "通用"),
+            FoundWord("测试", 12, 14, "通用"),
+            FoundWord("违禁", 0, 2, "通用")
+        ),
+        isClean = false
+    )
+    AudioTaggerTheme {
+        Surface(modifier = Modifier.padding(24.dp)) {
+            FoundState(result)
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun SensitiveCheckDialogPreview_Loading() {
+    AudioTaggerTheme {
+        // 直接展示内容，不用 Dialog 包装（Preview 不支持 Dialog）
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                LoadingState()
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun SensitiveCheckDialogPreview_Found() {
+    val result = SensitiveCheckResult(
+        originalText = "大御御-与青梅姐姐的新婚之夜.mp3",
+        foundWords = listOf(
+            FoundWord("新婚之夜", 10, 14, "低俗"),
+        ),
+        isClean = false
+    )
+    AudioTaggerTheme {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                FoundState(result)
+                Spacer(modifier = Modifier.height(16.dp))
+                HighlightedText(result.originalText, result)
+            }
+        }
+    }
 }

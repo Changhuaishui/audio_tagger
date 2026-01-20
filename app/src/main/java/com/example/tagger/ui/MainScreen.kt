@@ -27,10 +27,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.tooling.preview.Preview
 import com.example.tagger.core.SensitiveCheckResult
 import com.example.tagger.core.video.AudioFormat
 import com.example.tagger.core.video.ExtractionState
 import com.example.tagger.model.AudioMetadata
+import com.example.tagger.ui.theme.AudioTaggerTheme
 import com.example.tagger.ui.theme.AppPrimaryColor
 import com.example.tagger.ui.theme.AppleGray1
 import com.example.tagger.ui.theme.AppleGray5
@@ -75,7 +77,7 @@ fun MainScreen(
 ) {
     val uriHandler = LocalUriHandler.current
     var showMenu by remember { mutableStateOf(false) }
-    var showFabMenu by remember { mutableStateOf(false) }
+    var showAddMenu by remember { mutableStateOf(false) }  // 右上角 + 按钮菜单
 
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(uiState.message) {
@@ -133,76 +135,126 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0120b]", // 版本标记 - 视频提取功能
+                            "音乐标签 [v0120c]", // 版本标记 - Apple风格UI优化
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
                     actions = {
-                        if (uiState.audioList.isNotEmpty()) {
-                            // 选择按钮
-                            TextButton(onClick = onToggleSelectionMode) {
-                                Text("选择", color = AppPrimaryColor)
-                            }
-                            IconButton(onClick = { showMenu = true }) {
+                        // + 按钮 (添加文件) - 始终显示
+                        Box {
+                            IconButton(onClick = { showAddMenu = true }) {
                                 Icon(
-                                    Icons.Outlined.MoreHoriz,
-                                    contentDescription = "更多",
+                                    Icons.Default.Add,
+                                    contentDescription = "添加",
                                     tint = AppPrimaryColor
                                 )
                             }
                             DropdownMenu(
-                                expanded = showMenu,
-                                onDismissRequest = { showMenu = false },
+                                expanded = showAddMenu,
+                                onDismissRequest = { showAddMenu = false },
                                 shape = RoundedCornerShape(12.dp)
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text("从文件名填充") },
+                                    text = { Text("添加音频文件") },
                                     onClick = {
-                                        onBatchFill()
-                                        showMenu = false
+                                        onPickFiles()
+                                        showAddMenu = false
                                     },
                                     leadingIcon = {
-                                        Icon(Icons.Outlined.AutoFixHigh, null, tint = AppPrimaryColor)
+                                        Icon(Icons.Outlined.MusicNote, null, tint = AppPrimaryColor)
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("保存全部") },
+                                    text = { Text("从视频提取音轨") },
                                     onClick = {
-                                        onBatchSave()
-                                        showMenu = false
+                                        onPickVideo()
+                                        showAddMenu = false
                                     },
                                     leadingIcon = {
-                                        Icon(Icons.Outlined.CloudUpload, null, tint = AppPrimaryColor)
+                                        Icon(Icons.Outlined.VideoFile, null, tint = AppPrimaryColor)
                                     }
                                 )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(vertical = 8.dp),
-                                    color = AppleGray5
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("违禁词检测") },
-                                    onClick = {
-                                        onBatchCheckSensitive()
-                                        showMenu = false
-                                    },
-                                    leadingIcon = {
-                                        Icon(Icons.Outlined.Shield, null, tint = AppPrimaryColor)
-                                    }
-                                )
-                                HorizontalDivider(
-                                    modifier = Modifier.padding(vertical = 8.dp),
-                                    color = AppleGray5
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("清空列表", color = MaterialTheme.colorScheme.error) },
-                                    onClick = {
-                                        onClearAll()
-                                        showMenu = false
-                                    },
-                                    leadingIcon = {
-                                        Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error)
-                                    }
-                                )
+                            }
+                        }
+
+                        // ... 按钮 (更多操作) - 有文件时显示
+                        if (uiState.audioList.isNotEmpty()) {
+                            Box {
+                                IconButton(onClick = { showMenu = true }) {
+                                    Icon(
+                                        Icons.Outlined.MoreHoriz,
+                                        contentDescription = "更多",
+                                        tint = AppPrimaryColor
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = showMenu,
+                                    onDismissRequest = { showMenu = false },
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("选择") },
+                                        onClick = {
+                                            onToggleSelectionMode()
+                                            showMenu = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Outlined.CheckCircle, null, tint = AppPrimaryColor)
+                                        }
+                                    )
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        color = AppleGray5
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("从文件名填充") },
+                                        onClick = {
+                                            onBatchFill()
+                                            showMenu = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Outlined.AutoFixHigh, null, tint = AppPrimaryColor)
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("保存全部") },
+                                        onClick = {
+                                            onBatchSave()
+                                            showMenu = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Outlined.CloudUpload, null, tint = AppPrimaryColor)
+                                        }
+                                    )
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        color = AppleGray5
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("违禁词检测") },
+                                        onClick = {
+                                            onBatchCheckSensitive()
+                                            showMenu = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Outlined.Shield, null, tint = AppPrimaryColor)
+                                        }
+                                    )
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(vertical = 8.dp),
+                                        color = AppleGray5
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("清空列表", color = MaterialTheme.colorScheme.error) },
+                                        onClick = {
+                                            onClearAll()
+                                            showMenu = false
+                                        },
+                                        leadingIcon = {
+                                            Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    )
+                                }
                             }
                         }
                     },
@@ -244,54 +296,6 @@ fun MainScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("移除 ${uiState.selectedUris.size} 项")
                         }
-                    }
-                }
-            }
-        },
-        floatingActionButton = {
-            // 非选择模式才显示 FAB
-            if (!uiState.isSelectionMode) {
-                Box {
-                    FloatingActionButton(
-                        onClick = { showFabMenu = true },
-                        shape = CircleShape,
-                        containerColor = AppPrimaryColor,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.shadow(
-                            elevation = 8.dp,
-                            shape = CircleShape,
-                            spotColor = AppPrimaryColor.copy(alpha = 0.4f)
-                        )
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "添加")
-                    }
-
-                    // FAB 下拉菜单
-                    DropdownMenu(
-                        expanded = showFabMenu,
-                        onDismissRequest = { showFabMenu = false },
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("添加音频文件") },
-                            onClick = {
-                                onPickFiles()
-                                showFabMenu = false
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Outlined.MusicNote, null, tint = AppPrimaryColor)
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("从视频提取音轨") },
-                            onClick = {
-                                onPickVideo()
-                                showFabMenu = false
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Outlined.VideoFile, null, tint = AppPrimaryColor)
-                            }
-                        )
                     }
                 }
             }
@@ -434,7 +438,7 @@ private fun EmptyState(onPickFiles: () -> Unit) {
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            "点击添加按钮选择音频文件",
+            "点击右上角 + 号添加音频",
             style = MaterialTheme.typography.bodyMedium,
             color = AppleGray1
         )
@@ -497,9 +501,9 @@ private fun AudioList(
             )
         }
 
-        // 底部留白，避免 FAB 遮挡
+        // 底部留白
         item {
-            Spacer(modifier = Modifier.height(80.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
@@ -629,6 +633,126 @@ private fun InfoChip(text: String) {
             style = MaterialTheme.typography.labelSmall,
             color = AppleGray1,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+}
+
+// ==================== Previews ====================
+
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun MainScreenPreview_Empty() {
+    AudioTaggerTheme {
+        MainScreen(
+            uiState = MainUiState(),
+            onPickFiles = {},
+            onSelectItem = {},
+            onSaveItem = {},
+            onRemoveItem = {},
+            onBatchFill = {},
+            onBatchSave = {},
+            onClearAll = {},
+            onClearMessage = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+private fun MainScreenPreview_WithList() {
+    val sampleList = listOf(
+        AudioMetadata(
+            uri = Uri.EMPTY,
+            filePath = "/test/1.mp3",
+            displayName = "Coldplay - Viva La Vida.mp3",
+            format = "MP3",
+            title = "Viva La Vida",
+            artist = "Coldplay",
+            album = "Viva la Vida",
+            duration = 242,
+            bitrate = 320
+        ),
+        AudioMetadata(
+            uri = Uri.parse("content://test/2"),
+            filePath = "/test/2.flac",
+            displayName = "周杰伦 - 晴天.flac",
+            format = "FLAC",
+            title = "晴天",
+            artist = "周杰伦",
+            album = "叶惠美",
+            duration = 269,
+            bitrate = 1411
+        ),
+        AudioMetadata(
+            uri = Uri.parse("content://test/3"),
+            filePath = "/test/3.m4a",
+            displayName = "Taylor Swift - Blank Space.m4a",
+            format = "M4A",
+            title = "Blank Space",
+            artist = "Taylor Swift",
+            duration = 231,
+            bitrate = 256
+        )
+    )
+
+    AudioTaggerTheme {
+        MainScreen(
+            uiState = MainUiState(audioList = sampleList),
+            onPickFiles = {},
+            onSelectItem = {},
+            onSaveItem = {},
+            onRemoveItem = {},
+            onBatchFill = {},
+            onBatchSave = {},
+            onClearAll = {},
+            onClearMessage = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun AudioItemPreview() {
+    AudioTaggerTheme {
+        AudioItem(
+            metadata = AudioMetadata(
+                uri = Uri.EMPTY,
+                filePath = "/test.mp3",
+                displayName = "Coldplay - Viva La Vida.mp3",
+                format = "MP3",
+                title = "Viva La Vida",
+                artist = "Coldplay",
+                album = "Viva la Vida",
+                duration = 242,
+                bitrate = 320
+            ),
+            isSelectionMode = false,
+            isSelected = false,
+            onClick = {},
+            onLongClick = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun AudioItemPreview_Selected() {
+    AudioTaggerTheme {
+        AudioItem(
+            metadata = AudioMetadata(
+                uri = Uri.EMPTY,
+                filePath = "/test.flac",
+                displayName = "周杰伦 - 晴天.flac",
+                format = "FLAC",
+                title = "晴天",
+                artist = "周杰伦",
+                duration = 269,
+                bitrate = 1411
+            ),
+            isSelectionMode = true,
+            isSelected = true,
+            onClick = {},
+            onLongClick = {}
         )
     }
 }

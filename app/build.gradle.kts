@@ -15,6 +15,12 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Only include arm64-v8a to reduce APK size
+        // Most modern phones are arm64, this reduces ~100MB
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     buildTypes {
@@ -26,6 +32,17 @@ android {
             )
         }
     }
+
+    // Generate separate APKs for each ABI (optional - uncomment if needed)
+    // This creates app-arm64-v8a-debug.apk (~130MB) and app-armeabi-v7a-debug.apk (~110MB)
+    // splits {
+    //     abi {
+    //         isEnable = true
+    //         reset()
+    //         include("arm64-v8a", "armeabi-v7a")
+    //         isUniversalApk = false
+    //     }
+    // }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11

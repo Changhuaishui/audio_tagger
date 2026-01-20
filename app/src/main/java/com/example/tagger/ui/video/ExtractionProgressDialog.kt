@@ -19,9 +19,11 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.tagger.core.video.ExtractionProgress
 import com.example.tagger.core.video.ExtractionResult
 import com.example.tagger.core.video.ExtractionState
+import androidx.compose.ui.tooling.preview.Preview
 import com.example.tagger.ui.theme.AppPrimaryColor
 import com.example.tagger.ui.theme.AppleGreen
 import com.example.tagger.ui.theme.AppleRed
+import com.example.tagger.ui.theme.AudioTaggerTheme
 
 /**
  * Dialog showing extraction progress and result.
@@ -301,5 +303,86 @@ private fun formatFileSize(bytes: Long): String {
     return when {
         mb >= 1.0 -> String.format("%.1f MB", mb)
         else -> String.format("%.0f KB", kb)
+    }
+}
+
+// ==================== Previews ====================
+
+@Preview(showBackground = true)
+@Composable
+private fun AnalyzingContentPreview() {
+    AudioTaggerTheme {
+        androidx.compose.material3.Surface {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                AnalyzingContent()
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun ExtractingContentPreview() {
+    AudioTaggerTheme {
+        androidx.compose.material3.Surface {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                ExtractingContent(
+                    progress = ExtractionProgress(
+                        percent = 65,
+                        timeMs = 155000L,
+                        totalMs = 240000L,
+                        speed = "2.1x"
+                    )
+                )
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun CompletedContentPreview() {
+    AudioTaggerTheme {
+        androidx.compose.material3.Surface {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                CompletedContent(
+                    result = ExtractionResult.Success(
+                        audioUri = android.net.Uri.EMPTY,
+                        filePath = "/storage/emulated/0/Music/output.flac",
+                        displayName = "演唱会现场 - 周杰伦.flac",
+                        fileSize = 1024L * 1024 * 45  // 45MB
+                    ),
+                    onDismiss = {},
+                    onImportAudio = {}
+                )
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun FailedContentPreview() {
+    AudioTaggerTheme {
+        androidx.compose.material3.Surface {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                FailedContent(
+                    error = "FFmpeg 执行失败：找不到音频流",
+                    onDismiss = {}
+                )
+            }
+        }
     }
 }

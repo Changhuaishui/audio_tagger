@@ -3,8 +3,10 @@ package com.example.tagger.core.video
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Environment
 import android.util.Log
 import androidx.core.net.toUri
+import com.example.tagger.core.MediaScannerUtil
 import com.mzgs.ffmpegx.FFmpeg
 import com.mzgs.ffmpegx.FFmpegHelper
 import kotlinx.coroutines.Dispatchers
@@ -26,20 +28,48 @@ class VideoExtractor(private val context: Context) {
 
     private var ffmpeg: FFmpeg? = null
 
-    private suspend fun ensureFFmpegInitialized(): Boolean = withContext(Dispatchers.IO) {
-        if (ffmpeg == null) {
-            ffmpeg = FFmpeg.initialize(context)
-        }
-        val ff = ffmpeg ?: return@withContext false
-        if (!ff.isInstalled()) {
-            try {
-                ff.install()
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to install FFmpeg", e)
-                return@withContext false
+    private suspend fun ensureFFmpegInitialized(): FFmpegInitResult = withContext(Dispatchers.IO) {
+        try {
+            // Check if we're on a supported architecture first
+            val supportedAbis = listOf("arm64-v8a", "armeabi-v7a")
+            val deviceAbis = android.os.Build.SUPPORTED_ABIS.toList()
+            val isArchitectureSupported = deviceAbis.any { it in supportedAbis }
+
+            if (!isArchitectureSupported) {
+                Log.e(TAG, "Unsupported architecture: ${deviceAbis.joinToString()}")
+                return@withContext FFmpegInitResult.UnsupportedArchitecture(deviceAbis.firstOrNull() ?: "unknown")
             }
+
+            if (ffmpeg == null) {
+                ffmpeg = FFmpeg.initialize(context)
+            }
+            val ff = ffmpeg ?: return@withContext FFmpegInitResult.Error("FFmpeg 初始化失败")
+
+            if (!ff.isInstalled()) {
+                try {
+                    ff.install()
+                } catch (e: UnsatisfiedLinkError) {
+                    Log.e(TAG, "FFmpeg native library load failed", e)
+                    return@withContext FFmpegInitResult.UnsupportedArchitecture(deviceAbis.firstOrNull() ?: "unknown")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to install FFmpeg", e)
+                    return@withContext FFmpegInitResult.Error("FFmpeg 安装失败: ${e.message}")
+                }
+            }
+            FFmpegInitResult.Success
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "Architecture not supported", e)
+            FFmpegInitResult.UnsupportedArchitecture(android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown")
+        } catch (e: Exception) {
+            Log.e(TAG, "FFmpeg initialization error", e)
+            FFmpegInitResult.Error("初始化错误: ${e.message}")
         }
-        true
+    }
+
+    private sealed class FFmpegInitResult {
+        object Success : FFmpegInitResult()
+        data class UnsupportedArchitecture(val arch: String) : FFmpegInitResult()
+        data class Error(val message: String) : FFmpegInitResult()
     }
 
     /**
@@ -121,10 +151,24 @@ class VideoExtractor(private val context: Context) {
         withContext(Dispatchers.IO) {
             try {
                 // 初始化 FFmpeg
-                if (!ensureFFmpegInitialized()) {
-                    trySend(ExtractionState.Failed("无法初始化 FFmpeg"))
-                    close()
-                    return@withContext
+                when (val initResult = ensureFFmpegInitialized()) {
+                    is FFmpegInitResult.Success -> {
+                        // Continue with extraction
+                    }
+                    is FFmpegInitResult.UnsupportedArchitecture -> {
+                        val errorMsg = "此设备架构不支持视频提取功能 (${initResult.arch})。\n\n" +
+                            "FFmpeg 库仅支持 ARM 设备。如果你在使用 x86 模拟器，请改用：\n" +
+                            "• ARM64 模拟器\n" +
+                            "• 真实的 Android 手机"
+                        trySend(ExtractionState.Failed(errorMsg))
+                        close()
+                        return@withContext
+                    }
+                    is FFmpegInitResult.Error -> {
+                        trySend(ExtractionState.Failed(initResult.message))
+                        close()
+                        return@withContext
+                    }
                 }
 
                 // Analyze video first
@@ -208,8 +252,12 @@ class VideoExtractor(private val context: Context) {
                             Log.d(TAG, "FFmpeg extraction succeeded")
                             extractionSucceeded = true
 
-                            // Move to a more permanent location
-                            val finalDir = File(context.filesDir, "extracted_audio")
+                            // Save to public Music directory so other apps can access it
+                            val finalDir = getPublicMusicDirectory()
+                            if (finalDir == null) {
+                                trySend(ExtractionState.Failed("无法访问公共音乐目录，请检查存储权限"))
+                                return
+                            }
                             finalDir.mkdirs()
                             val finalFile = File(finalDir, outputFileName)
 
@@ -225,6 +273,10 @@ class VideoExtractor(private val context: Context) {
                             try {
                                 outputFile.copyTo(targetFile, overwrite = true)
                                 outputFile.delete()
+
+                                // Notify MediaScanner so the file appears in music players
+                                MediaScannerUtil.broadcastScan(context, targetFile)
+                                Log.d(TAG, "File saved to public directory: ${targetFile.absolutePath}")
 
                                 val result = ExtractionResult.Success(
                                     audioUri = targetFile.toUri(),
@@ -261,6 +313,10 @@ class VideoExtractor(private val context: Context) {
                         trySend(ExtractionState.Failed("FFmpeg 执行失败"))
                     }
 
+                } catch (e: UnsatisfiedLinkError) {
+                    Log.e(TAG, "Architecture not supported", e)
+                    val arch = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
+                    trySend(ExtractionState.Failed("此设备架构不支持视频提取 ($arch)"))
                 } catch (e: Exception) {
                     Log.e(TAG, "Extraction error", e)
                     trySend(ExtractionState.Failed("提取出错: ${e.message}"))
@@ -374,6 +430,45 @@ class VideoExtractor(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to check audio track", e)
             false
+        }
+    }
+
+    /**
+     * Get the public Music directory for saving extracted audio.
+     * Falls back to Downloads if Music directory is not available.
+     * Returns null if external storage is not available.
+     */
+    private fun getPublicMusicDirectory(): File? {
+        return try {
+            // Check if external storage is available
+            if (Environment.getExternalStorageState() != Environment.MEDIA_MOUNTED) {
+                Log.e(TAG, "External storage is not mounted")
+                return null
+            }
+
+            // Try Music directory first
+            val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
+            val appMusicDir = File(musicDir, "AudioTagger")
+
+            if (appMusicDir.exists() || appMusicDir.mkdirs()) {
+                Log.d(TAG, "Using Music directory: ${appMusicDir.absolutePath}")
+                return appMusicDir
+            }
+
+            // Fall back to Downloads directory
+            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val appDownloadDir = File(downloadDir, "AudioTagger")
+
+            if (appDownloadDir.exists() || appDownloadDir.mkdirs()) {
+                Log.d(TAG, "Using Downloads directory: ${appDownloadDir.absolutePath}")
+                return appDownloadDir
+            }
+
+            Log.e(TAG, "Could not create output directory")
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get public directory", e)
+            null
         }
     }
 }
