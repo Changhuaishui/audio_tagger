@@ -3,7 +3,8 @@
     "allow": [
       "Bash(./gradlew assembleDebug:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Apple风格UI优化 - 移除FAB，统一右上角操作\n\n- 移除右下角 FAB 按钮，内容区 100% 干净\n- 右上角添加 + 按钮（添加音频/从视频提取）\n- 将\"选择\"功能收入 ... 菜单\n- 保留长按进入多选模式的 iOS 标准交互\n- 修复视频提取预览代码的参数错误\n- 版本更新为 v0120c\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Apple风格UI优化 - 移除FAB，统一右上角操作\n\n- 移除右下角 FAB 按钮，内容区 100% 干净\n- 右上角添加 + 按钮（添加音频/从视频提取）\n- 将\"选择\"功能收入 ... 菜单\n- 保留长按进入多选模式的 iOS 标准交互\n- 修复视频提取预览代码的参数错误\n- 版本更新为 v0120c\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push)"
     ]
   }
 }

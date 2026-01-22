@@ -1,9 +1,11 @@
 package com.example.tagger.ui
 
 import android.app.Application
+import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.example.tagger.core.SensitiveCheckResult
 import com.example.tagger.core.SensitiveWordChecker
 import com.example.tagger.core.TagEditor
@@ -34,8 +36,20 @@ data class MainUiState(
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
+    companion object {
+        /** 广播 Action: 音频文件已保存 */
+        const val ACTION_AUDIO_SAVED = "com.example.tagger.ACTION_AUDIO_SAVED"
+        /** Extra: 文件路径 (String) */
+        const val EXTRA_FILE_PATH = "file_path"
+        /** Extra: 文件 Uri (String) */
+        const val EXTRA_FILE_URI = "file_uri"
+        /** Extra: 文件路径列表 (ArrayList<String>) - 用于批量保存 */
+        const val EXTRA_FILE_PATHS = "file_paths"
+    }
+
     private val tagEditor = TagEditor(application)
     private val sensitiveChecker = SensitiveWordChecker(application)
+    private val localBroadcastManager = LocalBroadcastManager.getInstance(application)
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -112,6 +126,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isLoading = false,
                         message = "保存成功"
                     )
+                    // 发送广播通知文件已保存
+                    broadcastAudioSaved(item)
                 }
                 is WriteResult.Error -> {
                     _uiState.value = _uiState.value.copy(
@@ -121,6 +137,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    /**
+     * 发送单个文件保存成功的广播
+     */
+    private fun broadcastAudioSaved(item: AudioMetadata) {
+        val intent = Intent(ACTION_AUDIO_SAVED).apply {
+            putExtra(EXTRA_FILE_PATH, item.filePath)
+            putExtra(EXTRA_FILE_URI, item.uri.toString())
+        }
+        localBroadcastManager.sendBroadcast(intent)
+    }
+
+    /**
+     * 发送批量保存成功的广播
+     */
+    private fun broadcastAudioSavedBatch(items: List<AudioMetadata>) {
+        val paths = ArrayList(items.map { it.filePath })
+        val intent = Intent(ACTION_AUDIO_SAVED).apply {
+            putStringArrayListExtra(EXTRA_FILE_PATHS, paths)
+        }
+        localBroadcastManager.sendBroadcast(intent)
     }
 
     /**
@@ -143,27 +181,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
 
-            var successCount = 0
+            val successItems = mutableListOf<AudioMetadata>()
             var failCount = 0
             withContext(Dispatchers.IO) {
                 _uiState.value.audioList.forEach { item ->
                     when (tagEditor.writeToUri(item.uri, item)) {
-                        is WriteResult.Success -> successCount++
+                        is WriteResult.Success -> successItems.add(item)
                         is WriteResult.Error -> failCount++
                     }
                 }
             }
 
             val message = if (failCount == 0) {
-                "已保存 $successCount 个文件"
+                "已保存 ${successItems.size} 个文件"
             } else {
-                "保存完成: $successCount 成功, $failCount 失败（部分文件格式不支持）"
+                "保存完成: ${successItems.size} 成功, $failCount 失败（部分文件格式不支持）"
             }
 
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 message = message
             )
+
+            // 发送广播通知批量保存完成
+            if (successItems.isNotEmpty()) {
+                broadcastAudioSavedBatch(successItems)
+            }
         }
     }
 

@@ -65,6 +65,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
 
     // Compose
     implementation(platform(libs.androidx.compose.bom))
