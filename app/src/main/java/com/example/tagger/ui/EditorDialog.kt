@@ -44,6 +44,11 @@ fun EditorDialog(
     onPickCover: (Uri) -> Unit = {},
     onFixExtension: ((AudioMetadata) -> Unit)? = null  // 修复扩展名回调
 ) {
+    // 文件名（不含扩展名）
+    val originalNameWithoutExt = remember { metadata.displayName.substringBeforeLast('.', metadata.displayName) }
+    val extension = remember { metadata.displayName.substringAfterLast('.', "") }
+    var fileName by remember { mutableStateOf(originalNameWithoutExt) }
+
     var title by remember { mutableStateOf(metadata.title) }
     var artist by remember { mutableStateOf(metadata.artist) }
     var album by remember { mutableStateOf(metadata.album) }
@@ -94,8 +99,15 @@ fun EditorDialog(
                     actions = {
                         TextButton(
                             onClick = {
+                                // 构建新的文件名（如果有变更）
+                                val newDisplayName = if (extension.isNotEmpty()) {
+                                    "$fileName.$extension"
+                                } else {
+                                    fileName
+                                }
                                 onSave(
                                     metadata.copy(
+                                        displayName = newDisplayName,  // 传递新文件名
                                         title = title,
                                         artist = artist,
                                         album = album,
@@ -187,7 +199,7 @@ fun EditorDialog(
 
                 Spacer(modifier = Modifier.height(32.dp))
 
-                // 文件信息卡片
+                // 文件名编辑卡片
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -198,12 +210,29 @@ fun EditorDialog(
                     Column(
                         modifier = Modifier.padding(16.dp)
                     ) {
-                        Text(
-                            text = metadata.displayName,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface
+                        // 文件名输入框
+                        AppleTextField(
+                            value = fileName,
+                            onValueChange = { fileName = it },
+                            label = "文件名",
+                            sensitiveWords = sensitiveWords
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // 扩展名提示（不可编辑）
+                        if (extension.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "扩展名: .$extension",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = AppleGray1
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = AppleGray5)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // 文件格式信息
                         Row(
                             verticalAlignment = Alignment.CenterVertically
                         ) {

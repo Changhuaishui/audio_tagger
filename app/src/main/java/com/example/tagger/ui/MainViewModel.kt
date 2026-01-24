@@ -104,30 +104,63 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 保存编辑后的元数据
+     * 保存编辑后的元数据（包括文件名变更）
      */
     fun saveItem(item: AudioMetadata) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
 
+            // 找到原始项目，检查文件名是否变更
+            val originalItem = _uiState.value.audioList.find { it.uri == item.uri }
+            val fileNameChanged = originalItem != null && originalItem.displayName != item.displayName
+
+            var currentUri = item.uri
+            var currentItem = item
+
+            // 如果文件名变更，先重命名
+            if (fileNameChanged) {
+                val renameResult = withContext(Dispatchers.IO) {
+                    tagEditor.renameFile(item.uri, item.displayName)
+                }
+                when (renameResult) {
+                    is RenameResult.Success -> {
+                        currentUri = renameResult.newUri
+                        currentItem = item.copy(uri = currentUri)
+                    }
+                    is RenameResult.Error -> {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            message = "重命名失败: ${renameResult.message}"
+                        )
+                        return@launch
+                    }
+                }
+            }
+
+            // 写入标签
             val result = withContext(Dispatchers.IO) {
-                tagEditor.writeToUri(item.uri, item)
+                tagEditor.writeToUri(currentUri, currentItem)
             }
 
             when (result) {
                 is WriteResult.Success -> {
                     // 更新列表中的项目
                     val updatedList = _uiState.value.audioList.map {
-                        if (it.uri == item.uri) item else it
+                        if (it.uri == item.uri) currentItem else it
+                    }
+                    val message = if (fileNameChanged) {
+                        "保存成功（文件已重命名）"
+                    } else {
+                        "保存成功"
                     }
                     _uiState.value = _uiState.value.copy(
                         audioList = updatedList,
                         selectedItem = null,
                         isLoading = false,
-                        message = "保存成功"
+                        message = message
                     )
                     // 发送广播通知文件已保存
-                    broadcastAudioSaved(item)
+                    broadcastAudioSaved(currentItem)
                 }
                 is WriteResult.Error -> {
                     _uiState.value = _uiState.value.copy(
