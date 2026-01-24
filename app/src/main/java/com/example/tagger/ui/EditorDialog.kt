@@ -49,7 +49,12 @@ fun EditorDialog(
     val extension = remember { metadata.displayName.substringAfterLast('.', "") }
     var fileName by remember { mutableStateOf(originalNameWithoutExt) }
 
-    var title by remember { mutableStateOf(metadata.title) }
+    // 如果标题为空，自动使用文件名作为默认值
+    var title by remember {
+        mutableStateOf(
+            if (metadata.title.isEmpty()) originalNameWithoutExt else metadata.title
+        )
+    }
     var artist by remember { mutableStateOf(metadata.artist) }
     var album by remember { mutableStateOf(metadata.album) }
     var year by remember { mutableStateOf(metadata.year) }

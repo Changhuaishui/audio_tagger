@@ -135,7 +135,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0124c]", // 版本标记 - 修复 FLAC 封面写入崩溃: 直接使用 MetadataBlockDataPicture 绕过 ImageIO
+                            "音乐标签 [v0124d]", // 版本标记 - 标题为空时自动用文件名预填充
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
