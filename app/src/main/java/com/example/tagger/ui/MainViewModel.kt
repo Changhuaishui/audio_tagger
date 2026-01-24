@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.tagger.core.FileNameOptimizer
 import com.example.tagger.core.SensitiveCheckResult
 import com.example.tagger.core.SensitiveWordChecker
 import com.example.tagger.core.TagEditor
@@ -40,6 +41,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val tagEditor = TagEditor(application)
     private val sensitiveChecker = SensitiveWordChecker(application)
+    // 暂时禁用以排查黑屏问题
+    private val fileNameOptimizer: FileNameOptimizer? = null // FileNameOptimizer(sensitiveChecker)
 
     private val _uiState = MutableStateFlow(MainUiState())
 
@@ -362,6 +365,99 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isSelectionMode = false,
             message = "已移除 $removedCount 个文件"
         )
+    }
+
+    /**
+     * 优化选中文件的文件名（处理违禁词）
+     *
+     * 优化策略:
+     * 1. 字符对调: "敏感" → "感敏"
+     * 2. 插入分隔符: "敏感" → "敏_感"
+     * 3. 删除违禁词
+     */
+    fun optimizeSelectedFileNames() {
+        // 暂时禁用以排查黑屏问题
+        val optimizer = fileNameOptimizer
+        if (optimizer == null) {
+            _uiState.value = _uiState.value.copy(message = "功能暂时禁用")
+            return
+        }
+
+        val selectedUris = _uiState.value.selectedUris
+        if (selectedUris.isEmpty()) {
+            _uiState.value = _uiState.value.copy(message = "请先选择要优化的文件")
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+
+            val selectedItems = _uiState.value.audioList.filter { it.uri in selectedUris }
+            var optimizedCount = 0
+            var failedCount = 0
+            val updatedList = _uiState.value.audioList.toMutableList()
+
+            for (item in selectedItems) {
+                // 获取文件名（不含扩展名）
+                val nameWithoutExt = item.displayName.substringBeforeLast('.', item.displayName)
+                val extension = item.displayName.substringAfterLast('.', "")
+
+                // 优化文件名
+                val result = optimizer.optimize(nameWithoutExt)
+
+                if (result.isChanged) {
+                    // 构建新文件名
+                    val newDisplayName = if (extension.isNotEmpty()) {
+                        "${result.optimizedName}.$extension"
+                    } else {
+                        result.optimizedName
+                    }
+
+                    // 执行重命名
+                    val renameResult = withContext(Dispatchers.IO) {
+                        tagEditor.renameFile(item.uri, newDisplayName)
+                    }
+
+                    when (renameResult) {
+                        is RenameResult.Success -> {
+                            // 重新读取文件信息
+                            val updatedItem = withContext(Dispatchers.IO) {
+                                tagEditor.readFromUri(renameResult.newUri)
+                            }
+                            if (updatedItem != null) {
+                                val index = updatedList.indexOfFirst { it.uri == item.uri }
+                                if (index >= 0) {
+                                    updatedList[index] = updatedItem
+                                }
+                                optimizedCount++
+                            }
+                        }
+                        is RenameResult.Error -> {
+                            failedCount++
+                        }
+                    }
+                }
+            }
+
+            val message = buildString {
+                if (optimizedCount > 0) append("已优化 $optimizedCount 个文件")
+                if (failedCount > 0) {
+                    if (optimizedCount > 0) append("，")
+                    append("$failedCount 个失败")
+                }
+                if (optimizedCount == 0 && failedCount == 0) {
+                    append("选中的文件无需优化")
+                }
+            }
+
+            _uiState.value = _uiState.value.copy(
+                audioList = updatedList,
+                selectedUris = emptySet(),
+                isSelectionMode = false,
+                isLoading = false,
+                message = message
+            )
+        }
     }
 
     /**

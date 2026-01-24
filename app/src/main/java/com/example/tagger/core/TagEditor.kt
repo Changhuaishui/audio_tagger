@@ -1,6 +1,8 @@
 package com.example.tagger.core
 
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
@@ -506,48 +508,81 @@ class TagEditor(private val context: Context) {
         return try {
             Log.d(TAG, "Renaming file: $uri -> $newName")
 
-            // 检查是否是 DocumentsContract Uri
-            if (DocumentsContract.isDocumentUri(context, uri)) {
-                // 使用 DocumentsContract 重命名
-                val newUri = DocumentsContract.renameDocument(
-                    context.contentResolver,
-                    uri,
-                    newName
-                )
-                if (newUri != null) {
-                    Log.d(TAG, "Rename succeeded: $newUri")
-                    RenameResult.Success(newUri)
-                } else {
-                    Log.e(TAG, "Rename returned null Uri")
-                    RenameResult.Error("重命名失败：无法获取新文件位置")
-                }
-            } else {
-                // 尝试使用 ContentResolver 的 update 方法
-                // 注意：这对于大多数 content:// Uri 可能不起作用
-                Log.w(TAG, "Uri is not a DocumentUri, attempting alternative method")
-
-                // 尝试获取文件路径并直接重命名
-                val filePath = getFilePathFromUri(uri)
-                if (filePath != null) {
-                    val file = File(filePath)
-                    if (file.exists()) {
-                        val newFile = File(file.parent, newName)
-                        if (file.renameTo(newFile)) {
-                            Log.d(TAG, "Direct file rename succeeded: ${newFile.absolutePath}")
-                            RenameResult.Success(Uri.fromFile(newFile))
-                        } else {
-                            RenameResult.Error("重命名失败：无法修改文件")
-                        }
+            // 策略1: 优先尝试直接文件重命名（更可靠）
+            val filePath = getFilePathFromUri(uri)
+            if (filePath != null) {
+                val file = File(filePath)
+                if (file.exists() && file.canWrite()) {
+                    val newFile = File(file.parent, newName)
+                    if (file.renameTo(newFile)) {
+                        Log.d(TAG, "Direct file rename succeeded: ${newFile.absolutePath}")
+                        // 通知 MediaScanner 更新
+                        notifyMediaScanner(Uri.fromFile(newFile), newFile.absolutePath)
+                        return RenameResult.Success(Uri.fromFile(newFile))
                     } else {
-                        RenameResult.Error("文件不存在")
+                        Log.w(TAG, "Direct rename failed, trying DocumentsContract")
                     }
-                } else {
-                    RenameResult.Error("不支持此类型的文件重命名，请使用文件管理器手动修改")
                 }
             }
+
+            // 策略2: 使用 DocumentsContract（需要 SAF 写权限）
+            if (DocumentsContract.isDocumentUri(context, uri)) {
+                // 先检查是否有写权限
+                val hasWritePermission = context.checkUriPermission(
+                    uri,
+                    android.os.Process.myPid(),
+                    android.os.Process.myUid(),
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                ) == PackageManager.PERMISSION_GRANTED
+
+                if (!hasWritePermission) {
+                    Log.w(TAG, "No write permission for DocumentUri, attempting anyway...")
+                }
+
+                try {
+                    val newUri = DocumentsContract.renameDocument(
+                        context.contentResolver,
+                        uri,
+                        newName
+                    )
+                    if (newUri != null) {
+                        Log.d(TAG, "DocumentsContract rename succeeded: $newUri")
+                        return RenameResult.Success(newUri)
+                    } else {
+                        Log.e(TAG, "DocumentsContract rename returned null")
+                    }
+                } catch (e: SecurityException) {
+                    Log.e(TAG, "Security exception during rename (Fix with AI)", e)
+                    // 继续尝试其他方法
+                }
+            }
+
+            // 策略3: 如果有文件路径但之前重命名失败，尝试复制+删除
+            if (filePath != null) {
+                val file = File(filePath)
+                if (file.exists()) {
+                    val newFile = File(file.parent, newName)
+                    try {
+                        file.copyTo(newFile, overwrite = true)
+                        if (file.delete()) {
+                            Log.d(TAG, "Copy+delete rename succeeded: ${newFile.absolutePath}")
+                            notifyMediaScanner(Uri.fromFile(newFile), newFile.absolutePath)
+                            return RenameResult.Success(Uri.fromFile(newFile))
+                        } else {
+                            // 复制成功但删除失败，删除复制的文件
+                            newFile.delete()
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Copy+delete rename failed", e)
+                        newFile.delete() // 清理可能的部分复制
+                    }
+                }
+            }
+
+            RenameResult.Error("重命名失败：无法修改文件。请尝试重新选择文件或使用文件管理器手动修改")
         } catch (e: SecurityException) {
             Log.e(TAG, "Security exception during rename", e)
-            RenameResult.Error("权限不足，无法重命名文件")
+            RenameResult.Error("权限不足，请重新选择文件以获取写入权限")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to rename file", e)
             RenameResult.Error("重命名失败: ${e.message ?: "未知错误"}")

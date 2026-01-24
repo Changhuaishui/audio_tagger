@@ -64,6 +64,7 @@ fun MainScreen(
     onToggleItemSelection: (AudioMetadata) -> Unit = {},
     onToggleSelectAll: () -> Unit = {},
     onRemoveSelected: () -> Unit = {},
+    onOptimizeSelected: () -> Unit = {},  // 优化选中文件的违禁词
     // 视频提取
     onSelectVideoFormat: (AudioFormat) -> Unit = {},
     onSelectVideoTrack: (Int) -> Unit = {},
@@ -119,6 +120,17 @@ fun MainScreen(
                         }
                     },
                     actions = {
+                        // 优化违禁词按钮
+                        TextButton(
+                            onClick = onOptimizeSelected,
+                            enabled = uiState.selectedUris.isNotEmpty()
+                        ) {
+                            Text(
+                                "优化",
+                                color = if (uiState.selectedUris.isNotEmpty()) AppPrimaryColor
+                                       else AppPrimaryColor.copy(alpha = 0.4f)
+                            )
+                        }
                         TextButton(onClick = onToggleSelectAll) {
                             Text(
                                 if (uiState.selectedUris.size == uiState.audioList.size) "取消全选" else "全选",
@@ -135,7 +147,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0124d]", // 版本标记 - 标题为空时自动用文件名预填充
+                            "音乐标签 [v0124g]", // 版本标记 - 修复 null safety 问题
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
@@ -213,7 +225,7 @@ fun MainScreen(
                                             showMenu = false
                                         },
                                         leadingIcon = {
-                                            Icon(Icons.Outlined.AutoFixHigh, null, tint = AppPrimaryColor)
+                                            Icon(Icons.Default.Build, null, tint = AppPrimaryColor)
                                         }
                                     )
                                     DropdownMenuItem(
@@ -279,8 +291,25 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(16.dp),
-                        horizontalArrangement = Arrangement.Center
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        // 优化违禁词按钮
+                        Button(
+                            onClick = onOptimizeSelected,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AppPrimaryColor
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Build,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("优化违禁词")
+                        }
+                        // 移除按钮
                         Button(
                             onClick = onRemoveSelected,
                             colors = ButtonDefaults.buttonColors(
@@ -294,7 +323,7 @@ fun MainScreen(
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("移除 ${uiState.selectedUris.size} 项")
+                            Text("移除")
                         }
                     }
                 }

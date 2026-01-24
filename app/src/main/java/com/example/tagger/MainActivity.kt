@@ -132,6 +132,7 @@ class MainActivity : ComponentActivity() {
                         onToggleItemSelection = { viewModel.toggleItemSelection(it) },
                         onToggleSelectAll = { viewModel.toggleSelectAll() },
                         onRemoveSelected = { viewModel.removeSelectedItems() },
+                        onOptimizeSelected = { viewModel.optimizeSelectedFileNames() },
                         // 视频提取
                         onSelectVideoFormat = { videoViewModel.selectFormat(it) },
                         onSelectVideoTrack = { videoViewModel.selectTrack(it) },
