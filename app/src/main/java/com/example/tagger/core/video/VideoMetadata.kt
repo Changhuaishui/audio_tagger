@@ -1,5 +1,6 @@
 package com.example.tagger.core.video
 
+import android.graphics.Bitmap
 import android.net.Uri
 
 /**
@@ -22,8 +23,22 @@ data class VideoMetadata(
     val containerFormat: String,
 
     /** List of audio tracks in the video */
-    val audioTracks: List<AudioTrackInfo>
+    val audioTracks: List<AudioTrackInfo>,
+
+    /** Video thumbnail (embedded cover or extracted frame) */
+    val thumbnail: Bitmap? = null,
+
+    /** Thumbnail raw bytes for saving to audio file */
+    val thumbnailBytes: ByteArray? = null
 ) {
+    /** Video title (display name without extension) */
+    val title: String
+        get() = displayName.substringBeforeLast(".")
+
+    /** Whether the video has a thumbnail */
+    val hasThumbnail: Boolean
+        get() = thumbnail != null
+
     /** Formatted duration string (HH:MM:SS or MM:SS) */
     val formattedDuration: String
         get() {

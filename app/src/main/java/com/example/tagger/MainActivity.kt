@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         // 版本标记 - 用于验证新版本正在运行
-        const val VERSION_TAG = "v0120b_video_extract"
+        const val VERSION_TAG = "v0124_video_metadata_transfer"
         private const val TAG = "MainActivity"
     }
 
@@ -140,7 +140,19 @@ class MainActivity : ComponentActivity() {
                         onDismissProgressDialog = { videoViewModel.dismissProgressDialog() },
                         onImportExtractedAudio = {
                             videoUiState.extractedResult?.let { result ->
-                                viewModel.loadAudioFiles(listOf(result.audioUri))
+                                val videoMeta = videoUiState.videoMetadata
+                                if (videoMeta != null) {
+                                    // 使用视频信息（标题和缩略图）填充音频标签
+                                    viewModel.loadAudioFileWithVideoMetadata(
+                                        audioUri = result.audioUri,
+                                        videoTitle = videoMeta.title,
+                                        thumbnail = videoMeta.thumbnail,
+                                        thumbnailBytes = videoMeta.thumbnailBytes
+                                    )
+                                } else {
+                                    // 如果没有视频元数据，直接加载
+                                    viewModel.loadAudioFiles(listOf(result.audioUri))
+                                }
                                 videoViewModel.clearExtractedResult()
                             }
                         },

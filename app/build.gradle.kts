@@ -56,8 +56,9 @@ dependencies {
     // JAudioTagger for audio metadata
     implementation("net.jthink:jaudiotagger:3.0.1")
 
-    // FFmpegX-Android - maintained FFmpeg library for Android (replaces retired FFmpegKit)
-    // https://github.com/mzgs/FFmpegX-Android
+    // FFmpegX-Android - maintained FFmpeg library for Android
+    // TODO: Switch to FFmpegKit full-gpl for MP3 support when network is available
+    // implementation("com.arthenica:ffmpeg-kit-full-gpl:6.0-2")
     implementation("com.github.mzgs:FFmpegX-Android:v2.2.1")
 
     // Core

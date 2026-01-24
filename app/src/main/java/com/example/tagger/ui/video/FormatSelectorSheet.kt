@@ -313,6 +313,8 @@ private fun FormatSelector(
     onFormatSelected: (AudioFormat) -> Unit
 ) {
     val formats = AudioFormat.entries
+    // Formats with built-in FFmpeg encoders (most reliable)
+    val reliableFormats = setOf(AudioFormat.ORIGINAL, AudioFormat.AAC, AudioFormat.FLAC, AudioFormat.WAV)
 
     LazyRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -321,7 +323,7 @@ private fun FormatSelector(
             FormatChip(
                 format = format,
                 isSelected = format == selectedFormat,
-                isRecommended = format == AudioFormat.ORIGINAL,
+                isRecommended = format in reliableFormats,
                 originalCodec = if (format == AudioFormat.ORIGINAL) originalCodec else null,
                 onClick = { onFormatSelected(format) }
             )
@@ -370,14 +372,26 @@ private fun FormatChip(
             )
         }
 
-        if (isRecommended) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "推荐",
-                style = MaterialTheme.typography.labelSmall,
-                color = AppPrimaryColor,
-                fontWeight = FontWeight.Medium
-            )
+        // Show recommendation badges
+        when {
+            format == AudioFormat.ORIGINAL -> {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "最快",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AppPrimaryColor,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+            isRecommended -> {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "推荐",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AppPrimaryColor,
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
     }
 }

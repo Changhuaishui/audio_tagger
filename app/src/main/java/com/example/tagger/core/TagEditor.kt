@@ -12,6 +12,8 @@ import com.example.tagger.ui.RenameResult
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
 import org.jaudiotagger.tag.images.ArtworkFactory
+import org.jaudiotagger.tag.flac.FlacTag
+import org.jaudiotagger.audio.flac.metadatablock.MetadataBlockDataPicture
 import java.io.File
 import java.io.FileOutputStream
 import android.util.Log
@@ -272,15 +274,20 @@ class TagEditor(private val context: Context) {
             // 写入封面
             metadata.coverArtBytes?.let { bytes ->
                 try {
-                    tag.deleteArtworkField()
-                    val artwork = ArtworkFactory.getNew()
-                    artwork.binaryData = bytes
-                    artwork.mimeType = metadata.coverArtMimeType ?: "image/jpeg"
-                    // Set picture type to 3 (Front Cover) for proper recognition by music players
-                    // ID3v2 Picture Types: 0=Other, 1=FileIcon, 2=OtherFileIcon, 3=FrontCover, etc.
-                    artwork.pictureType = 3
-                    tag.setField(artwork)
-                    Log.d(TAG, "Cover art written: ${bytes.size} bytes, type=FrontCover(3), mime=${artwork.mimeType}")
+                    val isFlac = tag is FlacTag
+                    if (isFlac) {
+                        // FLAC 文件：直接使用 MetadataBlockDataPicture 避免 ImageIO 调用
+                        writeFlacCover(tag as FlacTag, bytes, metadata.coverArtMimeType ?: "image/jpeg")
+                    } else {
+                        // 其他格式：使用标准方式
+                        tag.deleteArtworkField()
+                        val artwork = ArtworkFactory.getNew()
+                        artwork.binaryData = bytes
+                        artwork.mimeType = metadata.coverArtMimeType ?: "image/jpeg"
+                        artwork.pictureType = 3  // Front Cover
+                        tag.setField(artwork)
+                    }
+                    Log.d(TAG, "Cover art written: ${bytes.size} bytes, isFlac=$isFlac")
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to write cover art: ${e.message}")
                 }
@@ -310,6 +317,36 @@ class TagEditor(private val context: Context) {
             Log.e(TAG, "Failed to write tags: ${e.message}", e)
             WriteResult.Error("保存失败: ${e.message ?: "未知错误"}")
         }
+    }
+
+    /**
+     * 为 FLAC 文件写入封面，直接使用 MetadataBlockDataPicture 避免 ImageIO 调用
+     */
+    private fun writeFlacCover(flacTag: FlacTag, imageData: ByteArray, mimeType: String) {
+        // 删除现有封面
+        flacTag.deleteArtworkField()
+
+        // 解析图片尺寸
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(imageData, 0, imageData.size, options)
+        val width = options.outWidth
+        val height = options.outHeight
+
+        // 创建 FLAC Picture block
+        // pictureType 3 = Front Cover
+        val picture = MetadataBlockDataPicture(
+            imageData,
+            3,  // pictureType: Front Cover
+            mimeType,
+            "",  // description
+            width,
+            height,
+            0,  // colourDepth (0 = unknown)
+            0   // indexedColourCount (0 for non-indexed)
+        )
+
+        flacTag.setField(picture)
+        Log.d(TAG, "FLAC cover written: ${imageData.size} bytes, ${width}x${height}, $mimeType")
     }
 
     /**

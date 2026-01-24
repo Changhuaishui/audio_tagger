@@ -12,7 +12,7 @@ enum class AudioFormat(
     /** Keep original format - direct stream copy (fastest) */
     ORIGINAL("", "保留原格式", null, "audio/*"),
 
-    /** MP3 - Most compatible */
+    /** MP3 - Most compatible (libmp3lame encoder) */
     MP3("mp3", "MP3", "libmp3lame", "audio/mpeg"),
 
     /** FLAC - Lossless */

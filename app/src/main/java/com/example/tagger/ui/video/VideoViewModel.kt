@@ -1,14 +1,15 @@
 package com.example.tagger.ui.video
 
 import android.app.Application
-import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.example.tagger.core.video.*
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -17,21 +18,14 @@ import kotlinx.coroutines.launch
  */
 class VideoViewModel(application: Application) : AndroidViewModel(application) {
 
-    companion object {
-        /** 广播 Action: 音频已从视频提取 */
-        const val ACTION_AUDIO_EXTRACTED = "com.example.tagger.ACTION_AUDIO_EXTRACTED"
-        /** Extra: 提取的音频文件路径 (String) */
-        const val EXTRA_FILE_PATH = "file_path"
-        /** Extra: 提取的音频文件 Uri (String) */
-        const val EXTRA_FILE_URI = "file_uri"
-        /** Extra: 源视频文件 Uri (String) */
-        const val EXTRA_SOURCE_VIDEO_URI = "source_video_uri"
-    }
-
     private val extractor = VideoExtractor(application)
-    private val localBroadcastManager = LocalBroadcastManager.getInstance(application)
 
     private val _uiState = MutableStateFlow(VideoUiState())
+
+    // 使用 SharedFlow 替代 LocalBroadcastManager 发送事件
+    private val _audioExtractedEvent = MutableSharedFlow<AudioExtractedEvent>()
+    /** 音频提取事件流，外部可订阅 */
+    val audioExtractedEvent: SharedFlow<AudioExtractedEvent> = _audioExtractedEvent.asSharedFlow()
     val uiState: StateFlow<VideoUiState> = _uiState.asStateFlow()
 
     /**
@@ -82,8 +76,8 @@ class VideoViewModel(application: Application) : AndroidViewModel(application) {
                             extractedResult = state.result,
                             message = "提取成功: ${state.result.displayName}"
                         )
-                        // 发送广播通知音频已提取
-                        broadcastAudioExtracted(state.result, uri)
+                        // 发送事件通知音频已提取
+                        emitAudioExtracted(state.result, uri)
                     }
                     is ExtractionState.Failed -> {
                         _uiState.value = _uiState.value.copy(
@@ -152,15 +146,18 @@ class VideoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 发送音频提取成功的广播
+     * 发送音频提取成功的事件
      */
-    private fun broadcastAudioExtracted(result: ExtractionResult.Success, sourceVideoUri: Uri) {
-        val intent = Intent(ACTION_AUDIO_EXTRACTED).apply {
-            putExtra(EXTRA_FILE_PATH, result.filePath)
-            putExtra(EXTRA_FILE_URI, result.audioUri.toString())
-            putExtra(EXTRA_SOURCE_VIDEO_URI, sourceVideoUri.toString())
+    private fun emitAudioExtracted(result: ExtractionResult.Success, sourceVideoUri: Uri) {
+        viewModelScope.launch {
+            _audioExtractedEvent.emit(
+                AudioExtractedEvent(
+                    filePath = result.filePath,
+                    audioUri = result.audioUri,
+                    sourceVideoUri = sourceVideoUri
+                )
+            )
         }
-        localBroadcastManager.sendBroadcast(intent)
     }
 
     /**
@@ -183,4 +180,13 @@ data class VideoUiState(
     val showProgressDialog: Boolean = false,
     val extractedResult: ExtractionResult.Success? = null,
     val message: String? = null
+)
+
+/**
+ * 音频提取事件（替代 LocalBroadcastManager）
+ */
+data class AudioExtractedEvent(
+    val filePath: String,
+    val audioUri: Uri,
+    val sourceVideoUri: Uri
 )

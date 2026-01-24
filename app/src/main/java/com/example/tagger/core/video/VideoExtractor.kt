@@ -1,6 +1,8 @@
 package com.example.tagger.core.video
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Environment
@@ -14,11 +16,14 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 
 /**
  * Core class for extracting audio tracks from video files using FFmpegX-Android.
+ *
+ * Note: For full MP3 support (libmp3lame), switch to FFmpegKit full-gpl:
+ * implementation("com.arthenica:ffmpeg-kit-full-gpl:6.0-2")
  */
 class VideoExtractor(private val context: Context) {
 
@@ -80,7 +85,6 @@ class VideoExtractor(private val context: Context) {
             val displayName = getDisplayName(uri) ?: "video"
             val durationMs = getDurationFromRetriever(uri) ?: 0L
 
-            // 获取文件大小
             val fileSize = try {
                 context.contentResolver.openFileDescriptor(uri, "r")?.use {
                     it.statSize
@@ -91,38 +95,66 @@ class VideoExtractor(private val context: Context) {
 
             val containerFormat = displayName.substringAfterLast(".", "mp4")
 
-            // 使用 MediaMetadataRetriever 获取音轨信息
+            // 获取缩略图和音轨信息
+            var thumbnail: Bitmap? = null
+            var thumbnailBytes: ByteArray? = null
+            var audioTracks: List<AudioTrackInfo> = emptyList()
+
             val hasAudio = hasAudioTrack(uri)
-            val audioTracks = if (hasAudio) {
-                // 获取音频编码信息
+
+            try {
                 val retriever = MediaMetadataRetriever()
                 retriever.setDataSource(context, uri)
-                val mimeType = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE) ?: "audio/aac"
-                val bitrate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull()?.let { it / 1000 }
-                val sampleRate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toIntOrNull() ?: 44100
-                retriever.release()
 
-                val codec = when {
-                    mimeType.contains("aac", ignoreCase = true) -> "aac"
-                    mimeType.contains("mp3", ignoreCase = true) -> "mp3"
-                    mimeType.contains("opus", ignoreCase = true) -> "opus"
-                    mimeType.contains("vorbis", ignoreCase = true) -> "vorbis"
-                    mimeType.contains("flac", ignoreCase = true) -> "flac"
-                    else -> "aac"
+                // 1. 先尝试获取嵌入封面
+                val embeddedPicture = retriever.embeddedPicture
+                if (embeddedPicture != null) {
+                    thumbnail = BitmapFactory.decodeByteArray(embeddedPicture, 0, embeddedPicture.size)
+                    thumbnailBytes = embeddedPicture
+                    Log.d(TAG, "Got embedded thumbnail: ${thumbnail?.width}x${thumbnail?.height}")
                 }
 
-                listOf(
-                    AudioTrackInfo(
-                        index = 0,
-                        codec = codec,
-                        channels = 2,
-                        sampleRate = sampleRate,
-                        bitrate = bitrate,
-                        language = null
+                // 2. 如果没有嵌入封面，截取视频帧（1秒处，避免黑屏开场）
+                if (thumbnail == null) {
+                    val frameTimeUs = minOf(1_000_000L, durationMs * 1000 / 2) // 1秒或视频中点
+                    thumbnail = retriever.getFrameAtTime(frameTimeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    if (thumbnail != null) {
+                        // 将 Bitmap 转换为 ByteArray
+                        thumbnailBytes = bitmapToBytes(thumbnail)
+                        Log.d(TAG, "Got frame thumbnail: ${thumbnail.width}x${thumbnail.height}")
+                    }
+                }
+
+                // 获取音轨信息
+                if (hasAudio) {
+                    val mimeType = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE) ?: "audio/aac"
+                    val bitrate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull()?.let { it / 1000 }
+                    val sampleRate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toIntOrNull() ?: 44100
+
+                    val codec = when {
+                        mimeType.contains("aac", ignoreCase = true) -> "aac"
+                        mimeType.contains("mp3", ignoreCase = true) -> "mp3"
+                        mimeType.contains("opus", ignoreCase = true) -> "opus"
+                        mimeType.contains("vorbis", ignoreCase = true) -> "vorbis"
+                        mimeType.contains("flac", ignoreCase = true) -> "flac"
+                        else -> "aac"
+                    }
+
+                    audioTracks = listOf(
+                        AudioTrackInfo(
+                            index = 0,
+                            codec = codec,
+                            channels = 2,
+                            sampleRate = sampleRate,
+                            bitrate = bitrate,
+                            language = null
+                        )
                     )
-                )
-            } else {
-                emptyList()
+                }
+
+                retriever.release()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error extracting thumbnail or audio info", e)
             }
 
             VideoMetadata(
@@ -131,12 +163,23 @@ class VideoExtractor(private val context: Context) {
                 durationMs = durationMs,
                 fileSize = fileSize,
                 containerFormat = containerFormat,
-                audioTracks = audioTracks
+                audioTracks = audioTracks,
+                thumbnail = thumbnail,
+                thumbnailBytes = thumbnailBytes
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error analyzing video", e)
             null
         }
+    }
+
+    /**
+     * Convert Bitmap to ByteArray (JPEG format).
+     */
+    private fun bitmapToBytes(bitmap: Bitmap, quality: Int = 85): ByteArray {
+        val stream = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
+        return stream.toByteArray()
     }
 
     /**
@@ -150,11 +193,9 @@ class VideoExtractor(private val context: Context) {
 
         withContext(Dispatchers.IO) {
             try {
-                // 初始化 FFmpeg
+                // Initialize FFmpeg
                 when (val initResult = ensureFFmpegInitialized()) {
-                    is FFmpegInitResult.Success -> {
-                        // Continue with extraction
-                    }
+                    is FFmpegInitResult.Success -> { /* Continue */ }
                     is FFmpegInitResult.UnsupportedArchitecture -> {
                         val errorMsg = "此设备架构不支持视频提取功能 (${initResult.arch})。\n\n" +
                             "FFmpeg 库仅支持 ARM 设备。如果你在使用 x86 模拟器，请改用：\n" +
@@ -171,7 +212,6 @@ class VideoExtractor(private val context: Context) {
                     }
                 }
 
-                // Analyze video first
                 val metadata = analyzeVideo(uri)
                 if (metadata == null) {
                     trySend(ExtractionState.Failed("无法分析视频文件"))
@@ -187,7 +227,6 @@ class VideoExtractor(private val context: Context) {
 
                 trySend(ExtractionState.Ready(metadata))
 
-                // Copy video to temp file
                 val inputFile = copyUriToTemp(uri, "video_input")
                 if (inputFile == null) {
                     trySend(ExtractionState.Failed("无法读取视频文件"))
@@ -196,7 +235,6 @@ class VideoExtractor(private val context: Context) {
                 }
 
                 try {
-                    // Determine output format
                     val targetFormat = if (config.format == AudioFormat.ORIGINAL) {
                         val codecName = metadata.audioTracks.getOrNull(config.trackIndex)?.codec
                         AudioFormat.fromCodecName(codecName)
@@ -204,14 +242,12 @@ class VideoExtractor(private val context: Context) {
                         config.format
                     }
 
-                    // Create output file
                     val baseName = metadata.displayName.substringBeforeLast(".")
                     val outputFileName = "${baseName}.${targetFormat.extension}"
                     val outputDir = File(context.cacheDir, "extracted_audio")
                     outputDir.mkdirs()
                     val outputFile = File(outputDir, outputFileName)
 
-                    // Build FFmpeg command
                     val command = buildFFmpegCommand(
                         inputFile.absolutePath,
                         outputFile.absolutePath,
@@ -252,7 +288,6 @@ class VideoExtractor(private val context: Context) {
                             Log.d(TAG, "FFmpeg extraction succeeded")
                             extractionSucceeded = true
 
-                            // Save to public Music directory so other apps can access it
                             val finalDir = getPublicMusicDirectory()
                             if (finalDir == null) {
                                 trySend(ExtractionState.Failed("无法访问公共音乐目录，请检查存储权限"))
@@ -261,7 +296,6 @@ class VideoExtractor(private val context: Context) {
                             finalDir.mkdirs()
                             val finalFile = File(finalDir, outputFileName)
 
-                            // Handle duplicate names
                             var targetFile = finalFile
                             var counter = 1
                             while (targetFile.exists()) {
@@ -274,7 +308,6 @@ class VideoExtractor(private val context: Context) {
                                 outputFile.copyTo(targetFile, overwrite = true)
                                 outputFile.delete()
 
-                                // Notify MediaScanner so the file appears in music players
                                 MediaScannerUtil.broadcastScan(context, targetFile)
                                 Log.d(TAG, "File saved to public directory: ${targetFile.absolutePath}")
 
@@ -292,7 +325,8 @@ class VideoExtractor(private val context: Context) {
 
                         override fun onFailure(error: String) {
                             Log.e(TAG, "FFmpeg extraction failed: $error")
-                            trySend(ExtractionState.Failed("提取失败: $error"))
+                            val userMessage = parseFFmpegError(error, targetFormat)
+                            trySend(ExtractionState.Failed(userMessage))
                         }
 
                         override fun onFinish() {
@@ -327,8 +361,44 @@ class VideoExtractor(private val context: Context) {
             }
         }
 
-        awaitClose {
-            // FFmpegX-Android 会自动处理取消
+        awaitClose { }
+    }
+
+    /**
+     * Parse FFmpeg error and provide user-friendly message.
+     */
+    private fun parseFFmpegError(error: String, targetFormat: AudioFormat): String {
+        return when {
+            // Encoder not found - common issue with FFmpegX
+            error.contains("Encoder", ignoreCase = true) ||
+            error.contains("encoder", ignoreCase = true) ||
+            error.contains("libmp3lame", ignoreCase = true) ||
+            error.contains("libvorbis", ignoreCase = true) -> {
+                when (targetFormat) {
+                    AudioFormat.MP3 -> "MP3 编码器 (libmp3lame) 不可用。\n\n" +
+                        "解决方案：\n" +
+                        "• 选择 AAC 或 FLAC 格式（推荐）\n" +
+                        "• 或选择「保留原格式」直接复制音轨"
+                    AudioFormat.OGG -> "OGG 编码器 (libvorbis) 不可用。\n\n" +
+                        "解决方案：\n" +
+                        "• 选择 AAC 或 FLAC 格式（推荐）\n" +
+                        "• 或选择「保留原格式」直接复制音轨"
+                    else -> "编码器不可用，请尝试 AAC 或 FLAC 格式"
+                }
+            }
+            error.contains("No such file", ignoreCase = true) -> {
+                "文件访问失败，请检查存储权限"
+            }
+            error.contains("Permission denied", ignoreCase = true) -> {
+                "权限不足，请检查存储权限"
+            }
+            error.contains("Invalid data", ignoreCase = true) -> {
+                "视频文件格式不支持或已损坏"
+            }
+            else -> {
+                val shortError = if (error.length > 150) error.take(150) + "..." else error
+                "提取失败: $shortError\n\n建议尝试 AAC 或 FLAC 格式"
+            }
         }
     }
 
@@ -339,36 +409,40 @@ class VideoExtractor(private val context: Context) {
         targetFormat: AudioFormat
     ): String {
         val sb = StringBuilder()
+
+        // Input file (quote path for spaces)
         sb.append("-i \"$inputPath\" ")
 
-        // Select specific audio track
-        sb.append("-map 0:a:${config.trackIndex} ")
+        // Select audio track (only if not the first track, simpler command for track 0)
+        if (config.trackIndex > 0) {
+            sb.append("-map 0:a:${config.trackIndex} ")
+        }
 
         // Codec settings
         if (config.format == AudioFormat.ORIGINAL) {
-            // Stream copy - no re-encoding
             sb.append("-c:a copy ")
         } else {
-            // Re-encode to target format
             targetFormat.codec?.let { codec ->
                 sb.append("-c:a $codec ")
             }
 
-            // Quality settings for different formats
+            // Use constant bitrate for better compatibility
             when (targetFormat) {
-                AudioFormat.MP3 -> sb.append("-q:a 2 ") // VBR quality ~190kbps
+                AudioFormat.MP3 -> sb.append("-b:a 192k ")
                 AudioFormat.AAC -> sb.append("-b:a 192k ")
-                AudioFormat.OGG -> sb.append("-q:a 6 ") // Quality level 6
-                else -> {} // FLAC and WAV use default settings
+                AudioFormat.OGG -> sb.append("-b:a 192k ")
+                AudioFormat.FLAC -> sb.append("-compression_level 5 ")
+                else -> {}
             }
         }
 
-        // Disable video
+        // Disable video stream
         sb.append("-vn ")
 
-        // Overwrite output
+        // Overwrite output without asking
         sb.append("-y ")
 
+        // Output file (quote path for spaces)
         sb.append("\"$outputPath\"")
 
         return sb.toString()
@@ -433,20 +507,13 @@ class VideoExtractor(private val context: Context) {
         }
     }
 
-    /**
-     * Get the public Music directory for saving extracted audio.
-     * Falls back to Downloads if Music directory is not available.
-     * Returns null if external storage is not available.
-     */
     private fun getPublicMusicDirectory(): File? {
         return try {
-            // Check if external storage is available
             if (Environment.getExternalStorageState() != Environment.MEDIA_MOUNTED) {
                 Log.e(TAG, "External storage is not mounted")
                 return null
             }
 
-            // Try Music directory first
             val musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
             val appMusicDir = File(musicDir, "AudioTagger")
 
@@ -455,7 +522,6 @@ class VideoExtractor(private val context: Context) {
                 return appMusicDir
             }
 
-            // Fall back to Downloads directory
             val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             val appDownloadDir = File(downloadDir, "AudioTagger")
 

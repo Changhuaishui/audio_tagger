@@ -1,19 +1,21 @@
 package com.example.tagger.ui
 
 import android.app.Application
-import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.example.tagger.core.SensitiveCheckResult
 import com.example.tagger.core.SensitiveWordChecker
 import com.example.tagger.core.TagEditor
 import com.example.tagger.core.WriteResult
 import com.example.tagger.model.AudioMetadata
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -36,22 +38,15 @@ data class MainUiState(
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    companion object {
-        /** 广播 Action: 音频文件已保存 */
-        const val ACTION_AUDIO_SAVED = "com.example.tagger.ACTION_AUDIO_SAVED"
-        /** Extra: 文件路径 (String) */
-        const val EXTRA_FILE_PATH = "file_path"
-        /** Extra: 文件 Uri (String) */
-        const val EXTRA_FILE_URI = "file_uri"
-        /** Extra: 文件路径列表 (ArrayList<String>) - 用于批量保存 */
-        const val EXTRA_FILE_PATHS = "file_paths"
-    }
-
     private val tagEditor = TagEditor(application)
     private val sensitiveChecker = SensitiveWordChecker(application)
-    private val localBroadcastManager = LocalBroadcastManager.getInstance(application)
 
     private val _uiState = MutableStateFlow(MainUiState())
+
+    // 使用 SharedFlow 替代 LocalBroadcastManager 发送事件
+    private val _audioSavedEvent = MutableSharedFlow<AudioSavedEvent>()
+    /** 音频保存事件流，外部可订阅 */
+    val audioSavedEvent: SharedFlow<AudioSavedEvent> = _audioSavedEvent.asSharedFlow()
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     /**
@@ -72,6 +67,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 isLoading = false,
                 message = "已加载 ${items.size} 个文件"
             )
+        }
+    }
+
+    /**
+     * 加载从视频提取的音频文件，并自动填充视频的标题和封面
+     *
+     * @param audioUri 提取的音频文件 URI
+     * @param videoTitle 视频标题（用于填充音频的 title 字段）
+     * @param thumbnail 视频缩略图（用于填充音频的封面）
+     * @param thumbnailBytes 缩略图原始字节（用于保存）
+     */
+    fun loadAudioFileWithVideoMetadata(
+        audioUri: Uri,
+        videoTitle: String,
+        thumbnail: Bitmap?,
+        thumbnailBytes: ByteArray?
+    ) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+
+            val item = withContext(Dispatchers.IO) {
+                tagEditor.readFromUri(audioUri)
+            }
+
+            if (item != null) {
+                // 用视频信息填充音频标签
+                val updatedItem = item.copy(
+                    // 如果音频本身没有标题，使用视频标题
+                    title = if (item.title.isEmpty()) videoTitle else item.title,
+                    // 如果音频本身没有封面，使用视频缩略图
+                    coverArt = if (item.coverArt == null) thumbnail else item.coverArt,
+                    coverArtBytes = if (item.coverArtBytes == null) thumbnailBytes else item.coverArtBytes,
+                    coverArtMimeType = if (item.coverArtBytes == null && thumbnailBytes != null) "image/jpeg" else item.coverArtMimeType
+                )
+
+                _uiState.value = _uiState.value.copy(
+                    audioList = _uiState.value.audioList + updatedItem,
+                    isLoading = false,
+                    message = "已导入并填充视频信息: $videoTitle"
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    message = "无法读取提取的音频文件"
+                )
+            }
         }
     }
 
@@ -159,8 +200,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isLoading = false,
                         message = message
                     )
-                    // 发送广播通知文件已保存
-                    broadcastAudioSaved(currentItem)
+                    // 发送事件通知文件已保存
+                    emitAudioSaved(currentItem)
                 }
                 is WriteResult.Error -> {
                     _uiState.value = _uiState.value.copy(
@@ -173,25 +214,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 发送单个文件保存成功的广播
+     * 发送单个文件保存成功的事件
      */
-    private fun broadcastAudioSaved(item: AudioMetadata) {
-        val intent = Intent(ACTION_AUDIO_SAVED).apply {
-            putExtra(EXTRA_FILE_PATH, item.filePath)
-            putExtra(EXTRA_FILE_URI, item.uri.toString())
+    private fun emitAudioSaved(item: AudioMetadata) {
+        viewModelScope.launch {
+            _audioSavedEvent.emit(AudioSavedEvent.Single(item.filePath, item.uri))
         }
-        localBroadcastManager.sendBroadcast(intent)
     }
 
     /**
-     * 发送批量保存成功的广播
+     * 发送批量保存成功的事件
      */
-    private fun broadcastAudioSavedBatch(items: List<AudioMetadata>) {
-        val paths = ArrayList(items.map { it.filePath })
-        val intent = Intent(ACTION_AUDIO_SAVED).apply {
-            putStringArrayListExtra(EXTRA_FILE_PATHS, paths)
+    private fun emitAudioSavedBatch(items: List<AudioMetadata>) {
+        viewModelScope.launch {
+            _audioSavedEvent.emit(AudioSavedEvent.Batch(items.map { it.filePath }))
         }
-        localBroadcastManager.sendBroadcast(intent)
     }
 
     /**
@@ -236,9 +273,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 message = message
             )
 
-            // 发送广播通知批量保存完成
+            // 发送事件通知批量保存完成
             if (successItems.isNotEmpty()) {
-                broadcastAudioSavedBatch(successItems)
+                emitAudioSavedBatch(successItems)
             }
         }
     }
@@ -511,4 +548,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 sealed class RenameResult {
     data class Success(val newUri: Uri) : RenameResult()
     data class Error(val message: String) : RenameResult()
+}
+
+/**
+ * 音频保存事件（替代 LocalBroadcastManager）
+ */
+sealed class AudioSavedEvent {
+    /** 单个文件保存 */
+    data class Single(val filePath: String, val uri: Uri) : AudioSavedEvent()
+    /** 批量保存 */
+    data class Batch(val filePaths: List<String>) : AudioSavedEvent()
 }

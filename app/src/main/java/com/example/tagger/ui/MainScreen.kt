@@ -135,7 +135,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0120c]", // 版本标记 - Apple风格UI优化
+                            "音乐标签 [v0124c]", // 版本标记 - 修复 FLAC 封面写入崩溃: 直接使用 MetadataBlockDataPicture 绕过 ImageIO
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
@@ -258,7 +258,7 @@ fun MainScreen(
                             }
                         }
                     },
-                    colors = TopAppBarDefaults.largeTopAppBarColors(
+                    colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
                         scrolledContainerColor = MaterialTheme.colorScheme.surface
                     )
