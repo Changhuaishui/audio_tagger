@@ -239,16 +239,81 @@ class TagEditor(private val context: Context) {
 
     /**
      * 写入元数据到文件
+     * 根据文件格式选择不同的写入方式：
+     * - M4A: 使用 mp4parser (M4aTagWriter)
+     * - AAC (裸流): 不支持元数据
+     * - 其他格式 (MP3, FLAC, OGG, WAV): 使用 JAudioTagger
      */
     fun write(file: File, metadata: AudioMetadata): WriteResult {
-        return try {
-            Log.d(TAG, "Writing tags to: ${file.absolutePath}")
-            Log.d(TAG, "Title: ${metadata.title}, Artist: ${metadata.artist}, Album: ${metadata.album}")
+        Log.d(TAG, "Writing tags to: ${file.absolutePath}")
+        Log.d(TAG, "Title: ${metadata.title}, Artist: ${metadata.artist}, Album: ${metadata.album}")
 
-            // 检测实际格式与扩展名是否匹配
+        // 检测实际格式
+        val extension = file.extension.uppercase()
+        val actualFormat = detectActualFormat(file)
+        Log.d(TAG, "File extension: $extension, Actual format: $actualFormat")
+
+        // 根据格式选择写入方式
+        return when {
+            // M4A 格式：使用 mp4parser
+            actualFormat == "M4A" || extension in listOf("M4A", "MP4") -> {
+                writeWithM4aTagWriter(file, metadata)
+            }
+
+            // AAC 裸流：不支持元数据
+            extension == "AAC" && !M4aTagWriter.isValidM4aFile(file) -> {
+                Log.w(TAG, "Raw AAC file detected, metadata not supported")
+                WriteResult.Error("AAC 裸流文件不支持元数据。建议转换为 M4A 或 MP3 格式后再编辑标签。")
+            }
+
+            // 其他格式：使用 JAudioTagger
+            else -> {
+                writeWithJAudioTagger(file, metadata, actualFormat)
+            }
+        }
+    }
+
+    /**
+     * 使用 M4aTagWriter (mp4parser) 写入 M4A 文件
+     */
+    private fun writeWithM4aTagWriter(file: File, metadata: AudioMetadata): WriteResult {
+        Log.d(TAG, "Writing M4A tags with mp4parser: ${file.absolutePath}")
+
+        // 检查是否为有效的 M4A 容器（而非裸 AAC）
+        if (!M4aTagWriter.isValidM4aFile(file)) {
+            return WriteResult.Error("不是有效的 M4A 文件。可能是 AAC 裸流，不支持元数据。")
+        }
+
+        val m4aMetadata = M4aTagWriter.M4aMetadata(
+            title = metadata.title.ifEmpty { null },
+            artist = metadata.artist.ifEmpty { null },
+            album = metadata.album.ifEmpty { null },
+            year = metadata.year.ifEmpty { null },
+            genre = metadata.genre.ifEmpty { null },
+            comment = metadata.comment.ifEmpty { null },
+            coverArt = metadata.coverArtBytes
+        )
+
+        return when (val result = M4aTagWriter.writeMetadata(file, m4aMetadata)) {
+            is M4aTagWriter.Result.Success -> {
+                Log.d(TAG, "M4A tags written successfully")
+                WriteResult.Success
+            }
+            is M4aTagWriter.Result.Error -> {
+                Log.e(TAG, "M4A tag write failed: ${result.message}")
+                WriteResult.Error(result.message)
+            }
+        }
+    }
+
+    /**
+     * 使用 JAudioTagger 写入 (MP3, FLAC, OGG, WAV 等格式)
+     */
+    private fun writeWithJAudioTagger(file: File, metadata: AudioMetadata, actualFormat: String?): WriteResult {
+        return try {
+            Log.d(TAG, "Writing tags with JAudioTagger: ${file.absolutePath}")
+
             val extension = file.extension.uppercase()
-            val actualFormat = detectActualFormat(file)
-            Log.d(TAG, "File extension: $extension, Actual format: $actualFormat")
 
             // 如果格式不匹配，使用临时文件（正确扩展名）来写入
             val workFile = if (actualFormat != null && !isFormatMatch(extension, actualFormat)) {

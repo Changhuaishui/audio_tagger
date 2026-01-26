@@ -166,6 +166,21 @@ class VideoViewModel(application: Application) : AndroidViewModel(application) {
     fun reset() {
         _uiState.value = VideoUiState()
     }
+
+    /**
+     * Run FFmpeg diagnostic to check available encoders.
+     * Result will be shown in message and logged.
+     */
+    fun runDiagnostic() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(message = "正在检测 FFmpeg 编码器...")
+            val result = extractor.runDiagnostic()
+            _uiState.value = _uiState.value.copy(
+                message = result,
+                diagnosticResult = result
+            )
+        }
+    }
 }
 
 /**
@@ -179,7 +194,8 @@ data class VideoUiState(
     val showFormatSelector: Boolean = false,
     val showProgressDialog: Boolean = false,
     val extractedResult: ExtractionResult.Success? = null,
-    val message: String? = null
+    val message: String? = null,
+    val diagnosticResult: String? = null
 )
 
 /**

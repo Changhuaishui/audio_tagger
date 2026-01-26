@@ -73,6 +73,7 @@ fun MainScreen(
     onDismissProgressDialog: () -> Unit = {},
     onImportExtractedAudio: () -> Unit = {},
     onClearVideoMessage: () -> Unit = {},
+    onRunVideoDiagnostic: () -> Unit = {},
     // 修复扩展名
     onFixExtension: (AudioMetadata) -> Unit = {}
 ) {
@@ -147,7 +148,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0124g]", // 版本标记 - 修复 null safety 问题
+                            "音乐标签 [v0126b]", // 版本标记 - M4A标签写入使用mp4parser，支持标题/艺术家/专辑/注释
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
@@ -417,7 +418,9 @@ fun MainScreen(
             onFormatSelected = onSelectVideoFormat,
             onTrackSelected = onSelectVideoTrack,
             onStartExtraction = onStartExtraction,
-            onDismiss = onDismissFormatSelector
+            onDismiss = onDismissFormatSelector,
+            onRunDiagnostic = onRunVideoDiagnostic,
+            diagnosticResult = videoUiState.diagnosticResult
         )
     }
 

@@ -34,7 +34,9 @@ fun FormatSelectorSheet(
     onFormatSelected: (AudioFormat) -> Unit,
     onTrackSelected: (Int) -> Unit,
     onStartExtraction: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onRunDiagnostic: (() -> Unit)? = null,
+    diagnosticResult: String? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -50,12 +52,48 @@ fun FormatSelectorSheet(
                 .padding(bottom = 32.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Title
-            Text(
-                text = "提取音轨",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
+            // Title with diagnostic button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "提取音轨",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                if (onRunDiagnostic != null) {
+                    TextButton(onClick = onRunDiagnostic) {
+                        Icon(
+                            imageVector = Icons.Default.BugReport,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("诊断", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+
+            // Diagnostic result
+            if (diagnosticResult != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = diagnosticResult,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(12.dp),
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 

@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         // 版本标记 - 用于验证新版本正在运行
-        const val VERSION_TAG = "v0124_video_metadata_transfer"
+        const val VERSION_TAG = "v0125a_ffmpegkit_migration"
         private const val TAG = "MainActivity"
     }
 
@@ -158,6 +158,7 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onClearVideoMessage = { videoViewModel.clearMessage() },
+                        onRunVideoDiagnostic = { videoViewModel.runDiagnostic() },
                         // 修复扩展名
                         onFixExtension = { viewModel.fixFileExtension(it) }
                     )

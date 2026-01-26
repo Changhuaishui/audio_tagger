@@ -8,9 +8,11 @@ import android.net.Uri
 import android.os.Environment
 import android.util.Log
 import androidx.core.net.toUri
+import com.antonkarpenko.ffmpegkit.FFmpegKit
+import com.antonkarpenko.ffmpegkit.FFmpegKitConfig
+import com.antonkarpenko.ffmpegkit.FFprobeKit
+import com.antonkarpenko.ffmpegkit.ReturnCode
 import com.example.tagger.core.MediaScannerUtil
-import com.mzgs.ffmpegx.FFmpeg
-import com.mzgs.ffmpegx.FFmpegHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -20,10 +22,10 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 
 /**
- * Core class for extracting audio tracks from video files using FFmpegX-Android.
+ * Core class for extracting audio tracks from video files using FFmpegKit.
  *
- * Note: For full MP3 support (libmp3lame), switch to FFmpegKit full-gpl:
- * implementation("com.arthenica:ffmpeg-kit-full-gpl:6.0-2")
+ * Uses com.antonkarpenko:ffmpeg-kit-full-gpl which includes all encoders
+ * (AAC, libmp3lame, FLAC, PCM, libvorbis, libopus, etc.)
  */
 class VideoExtractor(private val context: Context) {
 
@@ -31,50 +33,49 @@ class VideoExtractor(private val context: Context) {
         private const val TAG = "VideoExtractor"
     }
 
-    private var ffmpeg: FFmpeg? = null
+    /**
+     * Run diagnostic to check FFmpeg capabilities.
+     * Call this to debug encoder availability issues.
+     */
+    suspend fun runDiagnostic(): String = withContext(Dispatchers.IO) {
+        val sb = StringBuilder()
+        sb.appendLine("=== FFmpeg 诊断报告 ===")
+        sb.appendLine("设备架构: ${android.os.Build.SUPPORTED_ABIS.joinToString()}")
 
-    private suspend fun ensureFFmpegInitialized(): FFmpegInitResult = withContext(Dispatchers.IO) {
         try {
-            // Check if we're on a supported architecture first
-            val supportedAbis = listOf("arm64-v8a", "armeabi-v7a")
-            val deviceAbis = android.os.Build.SUPPORTED_ABIS.toList()
-            val isArchitectureSupported = deviceAbis.any { it in supportedAbis }
+            // FFmpegKit auto-initializes, query version directly
+            val versionSession = FFprobeKit.execute("-version")
+            val versionOutput = versionSession.output ?: "无法获取版本信息"
+            sb.appendLine("FFmpeg 版本: ${versionOutput.lines().firstOrNull()}")
 
-            if (!isArchitectureSupported) {
-                Log.e(TAG, "Unsupported architecture: ${deviceAbis.joinToString()}")
-                return@withContext FFmpegInitResult.UnsupportedArchitecture(deviceAbis.firstOrNull() ?: "unknown")
-            }
+            // Check encoders
+            val encoderSession = FFmpegKit.execute("-hide_banner -encoders")
+            val encoderOutput = encoderSession.output ?: ""
 
-            if (ffmpeg == null) {
-                ffmpeg = FFmpeg.initialize(context)
-            }
-            val ff = ffmpeg ?: return@withContext FFmpegInitResult.Error("FFmpeg 初始化失败")
+            val encodersToCheck = listOf(
+                "aac" to "AAC",
+                "libmp3lame" to "MP3 (libmp3lame)",
+                "flac" to "FLAC",
+                "pcm_s16le" to "WAV (PCM)",
+                "libvorbis" to "OGG (libvorbis)",
+                "libopus" to "Opus"
+            )
 
-            if (!ff.isInstalled()) {
-                try {
-                    ff.install()
-                } catch (e: UnsatisfiedLinkError) {
-                    Log.e(TAG, "FFmpeg native library load failed", e)
-                    return@withContext FFmpegInitResult.UnsupportedArchitecture(deviceAbis.firstOrNull() ?: "unknown")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to install FFmpeg", e)
-                    return@withContext FFmpegInitResult.Error("FFmpeg 安装失败: ${e.message}")
-                }
+            sb.appendLine("\n编码器检测:")
+            for ((encoder, name) in encodersToCheck) {
+                val available = encoderOutput.contains(encoder)
+                val status = if (available) "✅" else "❌"
+                sb.appendLine("  $status $name ($encoder)")
+                Log.i(TAG, "Encoder test: $name ($encoder) = $available")
             }
-            FFmpegInitResult.Success
-        } catch (e: UnsatisfiedLinkError) {
-            Log.e(TAG, "Architecture not supported", e)
-            FFmpegInitResult.UnsupportedArchitecture(android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown")
         } catch (e: Exception) {
-            Log.e(TAG, "FFmpeg initialization error", e)
-            FFmpegInitResult.Error("初始化错误: ${e.message}")
+            Log.e(TAG, "Diagnostic error", e)
+            sb.appendLine("FFmpeg 状态: ❌ 诊断失败: ${e.message}")
         }
-    }
 
-    private sealed class FFmpegInitResult {
-        object Success : FFmpegInitResult()
-        data class UnsupportedArchitecture(val arch: String) : FFmpegInitResult()
-        data class Error(val message: String) : FFmpegInitResult()
+        val result = sb.toString()
+        Log.i(TAG, result)
+        result
     }
 
     /**
@@ -193,25 +194,6 @@ class VideoExtractor(private val context: Context) {
 
         withContext(Dispatchers.IO) {
             try {
-                // Initialize FFmpeg
-                when (val initResult = ensureFFmpegInitialized()) {
-                    is FFmpegInitResult.Success -> { /* Continue */ }
-                    is FFmpegInitResult.UnsupportedArchitecture -> {
-                        val errorMsg = "此设备架构不支持视频提取功能 (${initResult.arch})。\n\n" +
-                            "FFmpeg 库仅支持 ARM 设备。如果你在使用 x86 模拟器，请改用：\n" +
-                            "• ARM64 模拟器\n" +
-                            "• 真实的 Android 手机"
-                        trySend(ExtractionState.Failed(errorMsg))
-                        close()
-                        return@withContext
-                    }
-                    is FFmpegInitResult.Error -> {
-                        trySend(ExtractionState.Failed(initResult.message))
-                        close()
-                        return@withContext
-                    }
-                }
-
                 val metadata = analyzeVideo(uri)
                 if (metadata == null) {
                     trySend(ExtractionState.Failed("无法分析视频文件"))
@@ -252,107 +234,100 @@ class VideoExtractor(private val context: Context) {
                         inputFile.absolutePath,
                         outputFile.absolutePath,
                         config,
-                        targetFormat
+                        targetFormat,
+                        title = baseName  // 使用视频文件名作为标题
                     )
 
-                    Log.d(TAG, "FFmpeg command: $command")
+                    Log.i(TAG, "=== FFmpeg Extraction Start ===")
+                    Log.i(TAG, "Input: ${inputFile.absolutePath}")
+                    Log.i(TAG, "Output: ${outputFile.absolutePath}")
+                    Log.i(TAG, "Format: ${targetFormat.displayName} (codec: ${targetFormat.codec})")
+                    Log.i(TAG, "Command: $command")
 
                     val totalDuration = metadata.durationMs
-                    var extractionSucceeded = false
 
-                    val callback = object : FFmpegHelper.FFmpegCallback {
-                        override fun onStart() {
-                            Log.d(TAG, "FFmpeg extraction started")
-                        }
-
-                        override fun onProgress(progress: Float, time: Long) {
-                            val percent = if (totalDuration > 0) {
-                                ((time.toFloat() / totalDuration) * 100).toInt().coerceIn(0, 100)
-                            } else {
-                                (progress * 100).toInt().coerceIn(0, 100)
-                            }
-
-                            trySend(
-                                ExtractionState.Extracting(
-                                    ExtractionProgress(
-                                        percent = percent,
-                                        timeMs = time,
-                                        totalMs = totalDuration,
-                                        speed = null
-                                    )
+                    // Set up statistics callback for progress updates
+                    FFmpegKitConfig.enableStatisticsCallback { statistics ->
+                        val timeMs = statistics.time.toLong()
+                        val percent = if (totalDuration > 0) {
+                            ((timeMs.toFloat() / totalDuration) * 100).toInt().coerceIn(0, 100)
+                        } else 0
+                        trySend(
+                            ExtractionState.Extracting(
+                                ExtractionProgress(
+                                    percent = percent,
+                                    timeMs = timeMs,
+                                    totalMs = totalDuration,
+                                    speed = null
                                 )
                             )
-                        }
+                        )
+                    }
 
-                        override fun onSuccess(output: String?) {
-                            Log.d(TAG, "FFmpeg extraction succeeded")
-                            extractionSucceeded = true
+                    // Set up log callback
+                    FFmpegKitConfig.enableLogCallback { log ->
+                        Log.d(TAG, "FFmpeg: ${log.message}")
+                    }
 
-                            val finalDir = getPublicMusicDirectory()
-                            if (finalDir == null) {
-                                trySend(ExtractionState.Failed("无法访问公共音乐目录，请检查存储权限"))
-                                return
-                            }
-                            finalDir.mkdirs()
-                            val finalFile = File(finalDir, outputFileName)
+                    // Execute synchronously (we're already on Dispatchers.IO)
+                    val session = FFmpegKit.execute(command)
+                    val returnCode = session.returnCode
 
-                            var targetFile = finalFile
-                            var counter = 1
-                            while (targetFile.exists()) {
-                                val newName = "${baseName}_${counter}.${targetFormat.extension}"
-                                targetFile = File(finalDir, newName)
-                                counter++
-                            }
+                    if (ReturnCode.isSuccess(returnCode)) {
+                        Log.d(TAG, "FFmpeg extraction succeeded")
 
-                            try {
-                                outputFile.copyTo(targetFile, overwrite = true)
-                                outputFile.delete()
-
-                                MediaScannerUtil.broadcastScan(context, targetFile)
-                                Log.d(TAG, "File saved to public directory: ${targetFile.absolutePath}")
-
-                                val result = ExtractionResult.Success(
-                                    audioUri = targetFile.toUri(),
-                                    filePath = targetFile.absolutePath,
-                                    displayName = targetFile.name,
-                                    fileSize = targetFile.length()
-                                )
-                                trySend(ExtractionState.Completed(result))
-                            } catch (e: Exception) {
-                                trySend(ExtractionState.Failed("保存文件失败: ${e.message}"))
-                            }
-                        }
-
-                        override fun onFailure(error: String) {
-                            Log.e(TAG, "FFmpeg extraction failed: $error")
-                            val userMessage = parseFFmpegError(error, targetFormat)
-                            trySend(ExtractionState.Failed(userMessage))
-                        }
-
-                        override fun onFinish() {
-                            Log.d(TAG, "FFmpeg extraction finished")
+                        val finalDir = getPublicMusicDirectory()
+                        if (finalDir == null) {
+                            trySend(ExtractionState.Failed("无法访问公共音乐目录，请检查存储权限"))
                             inputFile.delete()
-                            if (!extractionSucceeded) {
-                                close()
-                            }
+                            close()
+                            return@withContext
+                        }
+                        finalDir.mkdirs()
+                        val finalFile = File(finalDir, outputFileName)
+
+                        var targetFile = finalFile
+                        var counter = 1
+                        while (targetFile.exists()) {
+                            val newName = "${baseName}_${counter}.${targetFormat.extension}"
+                            targetFile = File(finalDir, newName)
+                            counter++
                         }
 
-                        override fun onOutput(line: String) {
-                            Log.v(TAG, "FFmpeg output: $line")
+                        try {
+                            outputFile.copyTo(targetFile, overwrite = true)
+                            outputFile.delete()
+
+                            MediaScannerUtil.broadcastScan(context, targetFile)
+                            Log.d(TAG, "File saved to public directory: ${targetFile.absolutePath}")
+
+                            val result = ExtractionResult.Success(
+                                audioUri = targetFile.toUri(),
+                                filePath = targetFile.absolutePath,
+                                displayName = targetFile.name,
+                                fileSize = targetFile.length()
+                            )
+                            trySend(ExtractionState.Completed(result))
+                        } catch (e: Exception) {
+                            trySend(ExtractionState.Failed("保存文件失败: ${e.message}"))
                         }
+                    } else if (ReturnCode.isCancel(returnCode)) {
+                        trySend(ExtractionState.Failed("提取已取消"))
+                    } else {
+                        val errorLog = session.allLogsAsString ?: "未知错误"
+                        Log.e(TAG, "=== FFmpeg Extraction Failed ===")
+                        Log.e(TAG, "FFmpeg failed: $errorLog")
+                        val userMessage = parseFFmpegError(errorLog, targetFormat)
+                        trySend(ExtractionState.Failed(userMessage))
                     }
 
-                    val success = ffmpeg?.execute(command, callback) ?: false
-                    if (!success && !extractionSucceeded) {
-                        trySend(ExtractionState.Failed("FFmpeg 执行失败"))
-                    }
+                    // Clean up temp input file
+                    inputFile.delete()
+                    Log.i(TAG, "=== FFmpeg Extraction Finished ===")
 
-                } catch (e: UnsatisfiedLinkError) {
-                    Log.e(TAG, "Architecture not supported", e)
-                    val arch = android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
-                    trySend(ExtractionState.Failed("此设备架构不支持视频提取 ($arch)"))
                 } catch (e: Exception) {
                     Log.e(TAG, "Extraction error", e)
+                    inputFile.delete()
                     trySend(ExtractionState.Failed("提取出错: ${e.message}"))
                 }
             } catch (e: Exception) {
@@ -369,9 +344,9 @@ class VideoExtractor(private val context: Context) {
      */
     private fun parseFFmpegError(error: String, targetFormat: AudioFormat): String {
         return when {
-            // Encoder not found - common issue with FFmpegX
             error.contains("Encoder", ignoreCase = true) ||
             error.contains("encoder", ignoreCase = true) ||
+            error.contains("Unknown encoder", ignoreCase = true) ||
             error.contains("libmp3lame", ignoreCase = true) ||
             error.contains("libvorbis", ignoreCase = true) -> {
                 when (targetFormat) {
@@ -386,18 +361,13 @@ class VideoExtractor(private val context: Context) {
                     else -> "编码器不可用，请尝试 AAC 或 FLAC 格式"
                 }
             }
-            error.contains("No such file", ignoreCase = true) -> {
-                "文件访问失败，请检查存储权限"
-            }
-            error.contains("Permission denied", ignoreCase = true) -> {
-                "权限不足，请检查存储权限"
-            }
-            error.contains("Invalid data", ignoreCase = true) -> {
-                "视频文件格式不支持或已损坏"
-            }
+            error.contains("No such file", ignoreCase = true) -> "文件访问失败，请检查存储权限"
+            error.contains("Permission denied", ignoreCase = true) -> "权限不足，请检查存储权限"
+            error.contains("Invalid data", ignoreCase = true) -> "视频文件格式不支持或已损坏"
+            error.contains("Conversion failed", ignoreCase = true) -> "转换失败，请尝试其他格式"
             else -> {
-                val shortError = if (error.length > 150) error.take(150) + "..." else error
-                "提取失败: $shortError\n\n建议尝试 AAC 或 FLAC 格式"
+                val shortError = if (error.length > 200) error.takeLast(200) else error
+                "提取失败: $shortError"
             }
         }
     }
@@ -406,11 +376,12 @@ class VideoExtractor(private val context: Context) {
         inputPath: String,
         outputPath: String,
         config: ExtractionConfig,
-        targetFormat: AudioFormat
+        targetFormat: AudioFormat,
+        title: String? = null
     ): String {
         val sb = StringBuilder()
 
-        // Input file (quote path for spaces)
+        // Input file (keep quotes for paths with spaces)
         sb.append("-i \"$inputPath\" ")
 
         // Select audio track (only if not the first track, simpler command for track 0)
@@ -436,13 +407,24 @@ class VideoExtractor(private val context: Context) {
             }
         }
 
+        // Write metadata (title) directly during extraction
+        // This is more reliable than JAudioTagger for M4A/AAC files
+        if (!title.isNullOrBlank()) {
+            // Escape special characters in title for FFmpeg
+            val escapedTitle = title
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("'", "'\\''")
+            sb.append("-metadata title=\"$escapedTitle\" ")
+        }
+
         // Disable video stream
         sb.append("-vn ")
 
         // Overwrite output without asking
         sb.append("-y ")
 
-        // Output file (quote path for spaces)
+        // Output file (keep quotes for paths with spaces)
         sb.append("\"$outputPath\"")
 
         return sb.toString()

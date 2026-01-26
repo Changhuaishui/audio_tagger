@@ -53,13 +53,16 @@ android {
 }
 
 dependencies {
-    // JAudioTagger for audio metadata
+    // JAudioTagger for audio metadata (MP3, FLAC, OGG, WAV)
     implementation("net.jthink:jaudiotagger:3.0.1")
 
-    // FFmpegX-Android - maintained FFmpeg library for Android
-    // TODO: Switch to FFmpegKit full-gpl for MP3 support when network is available
-    // implementation("com.arthenica:ffmpeg-kit-full-gpl:6.0-2")
-    implementation("com.github.mzgs:FFmpegX-Android:v2.2.1")
+    // mp4parser for M4A/MP4 metadata (iTunes-style tags)
+    // JAudioTagger has issues writing M4A, so we use mp4parser instead
+    implementation("org.mp4parser:isoparser:1.9.56")
+
+    // FFmpegKit full-gpl - community fork with all encoders (AAC, libmp3lame, FLAC, libvorbis, etc.)
+    // Package: com.antonkarpenko.ffmpegkit (note: different from arthenica's package name)
+    implementation("com.antonkarpenko:ffmpeg-kit-full-gpl:1.1.0")
 
     // Core
     implementation(libs.androidx.core.ktx)
