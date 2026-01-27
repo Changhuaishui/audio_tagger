@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         // 版本标记 - 用于验证新版本正在运行
-        const val VERSION_TAG = "v0125a_ffmpegkit_migration"
+        const val VERSION_TAG = "v0127c_radar_path_filter"
         private const val TAG = "MainActivity"
     }
 
@@ -160,7 +160,17 @@ class MainActivity : ComponentActivity() {
                         onClearVideoMessage = { videoViewModel.clearMessage() },
                         onRunVideoDiagnostic = { videoViewModel.runDiagnostic() },
                         // 修复扩展名
-                        onFixExtension = { viewModel.fixFileExtension(it) }
+                        onFixExtension = { viewModel.fixFileExtension(it) },
+                        // 雷达扫描
+                        onShowRadarScan = { viewModel.showRadarScanDialog() },
+                        onStartRadarScan = { viewModel.startRadarScan() },
+                        onToggleScannedSelection = { viewModel.toggleScannedItemSelection(it) },
+                        onSelectAllScanned = { viewModel.selectAllScannedItems() },
+                        onDeselectAllScanned = { viewModel.deselectAllScannedItems() },
+                        onImportScanned = { viewModel.importSelectedScannedItems() },
+                        onDismissRadarDialog = { viewModel.dismissRadarDialog() },
+                        onToggleScanPath = { viewModel.toggleScanPath(it) },
+                        onToggleAllScanPaths = { viewModel.toggleAllScanPaths() }
                     )
                 }
             }

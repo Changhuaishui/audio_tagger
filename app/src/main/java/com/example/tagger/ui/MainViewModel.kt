@@ -1,8 +1,10 @@
 package com.example.tagger.ui
 
 import android.app.Application
+import android.content.ContentUris
 import android.graphics.Bitmap
 import android.net.Uri
+import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.tagger.core.FileNameOptimizer
@@ -11,6 +13,7 @@ import com.example.tagger.core.SensitiveWordChecker
 import com.example.tagger.core.TagEditor
 import com.example.tagger.core.WriteResult
 import com.example.tagger.model.AudioMetadata
+import com.example.tagger.model.ScannedAudioItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,7 +37,15 @@ data class MainUiState(
     val isSensitiveChecking: Boolean = false,
     // 多选模式
     val isSelectionMode: Boolean = false,
-    val selectedUris: Set<Uri> = emptySet()
+    val selectedUris: Set<Uri> = emptySet(),
+    // 雷达扫描状态
+    val showRadarDialog: Boolean = false,
+    val isScanning: Boolean = false,
+    val scanProgress: Float = 0f,
+    val scannedItems: List<ScannedAudioItem> = emptyList(),
+    val selectedScannedUris: Set<Uri> = emptySet(),
+    val scanPaths: List<String> = emptyList(),  // 用户选择的扫描路径
+    val availablePaths: List<ScanPathOption> = emptyList()  // 可选的路径列表
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -653,6 +664,348 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    // ==================== 雷达扫描功能 ====================
+
+    /**
+     * 显示雷达扫描对话框，并检测可用的音频路径
+     */
+    fun showRadarScanDialog() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                showRadarDialog = true,
+                scannedItems = emptyList(),
+                selectedScannedUris = emptySet(),
+                isScanning = true,  // 先显示加载状态
+                scanProgress = 0f,
+                scanPaths = emptyList(),
+                availablePaths = emptyList()
+            )
+
+            // 在后台检测可用路径
+            val paths = withContext(Dispatchers.IO) {
+                detectAvailablePaths()
+            }
+
+            _uiState.value = _uiState.value.copy(
+                isScanning = false,
+                availablePaths = paths,
+                // 默认选中所有路径
+                scanPaths = paths.map { it.path }
+            )
+        }
+    }
+
+    /**
+     * 关闭雷达扫描对话框
+     */
+    fun dismissRadarDialog() {
+        _uiState.value = _uiState.value.copy(
+            showRadarDialog = false,
+            scannedItems = emptyList(),
+            selectedScannedUris = emptySet(),
+            isScanning = false,
+            scanProgress = 0f,
+            scanPaths = emptyList(),
+            availablePaths = emptyList()
+        )
+    }
+
+    /**
+     * 切换扫描路径的选中状态
+     */
+    fun toggleScanPath(path: String) {
+        val currentPaths = _uiState.value.scanPaths
+        val newPaths = if (currentPaths.contains(path)) {
+            currentPaths - path
+        } else {
+            currentPaths + path
+        }
+        _uiState.value = _uiState.value.copy(scanPaths = newPaths)
+    }
+
+    /**
+     * 全选/取消全选扫描路径
+     */
+    fun toggleAllScanPaths() {
+        val allPaths = _uiState.value.availablePaths.map { it.path }
+        val currentPaths = _uiState.value.scanPaths
+        val newPaths = if (currentPaths.size == allPaths.size) {
+            emptyList()
+        } else {
+            allPaths
+        }
+        _uiState.value = _uiState.value.copy(scanPaths = newPaths)
+    }
+
+    /**
+     * 检测设备上有音频文件的目录
+     */
+    private fun detectAvailablePaths(): List<ScanPathOption> {
+        val context = getApplication<Application>()
+        val pathCounts = mutableMapOf<String, Int>()
+
+        val projection = arrayOf(
+            MediaStore.Audio.Media.DATA,
+            MediaStore.Audio.Media.DURATION
+        )
+
+        // 只统计 > 30秒的音频
+        val selection = "${MediaStore.Audio.Media.DURATION} > ?"
+        val selectionArgs = arrayOf("30000")
+
+        try {
+            context.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                null
+            )?.use { cursor ->
+                val dataColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+
+                while (cursor.moveToNext()) {
+                    val path = cursor.getString(dataColumn) ?: continue
+                    // 提取顶级目录 (如 /storage/emulated/0/Music)
+                    val topDir = extractTopDirectory(path)
+                    if (topDir != null) {
+                        pathCounts[topDir] = (pathCounts[topDir] ?: 0) + 1
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 按文件数量排序，生成选项列表
+        return pathCounts.entries
+            .sortedByDescending { it.value }
+            .map { (path, count) ->
+                ScanPathOption(
+                    path = path,
+                    displayName = formatPathForDisplay(path),
+                    audioCount = count,
+                    isSelected = true
+                )
+            }
+    }
+
+    /**
+     * 从完整路径提取顶级目录
+     * 例如: /storage/emulated/0/Music/artist/song.mp3 -> /storage/emulated/0/Music
+     */
+    private fun extractTopDirectory(fullPath: String): String? {
+        // 常见的存储根目录
+        val storageRoots = listOf(
+            "/storage/emulated/0/",
+            "/storage/emulated/legacy/",
+            "/sdcard/"
+        )
+
+        for (root in storageRoots) {
+            if (fullPath.startsWith(root)) {
+                val relativePath = fullPath.removePrefix(root)
+                val firstDir = relativePath.split("/").firstOrNull { it.isNotEmpty() }
+                if (firstDir != null) {
+                    return root + firstDir
+                }
+            }
+        }
+
+        // 外部 SD 卡: /storage/XXXX-XXXX/
+        if (fullPath.startsWith("/storage/")) {
+            val parts = fullPath.removePrefix("/storage/").split("/")
+            if (parts.size >= 2) {
+                return "/storage/${parts[0]}/${parts[1]}"
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * 格式化路径用于显示
+     */
+    private fun formatPathForDisplay(path: String): String {
+        return path
+            .replace("/storage/emulated/0/", "")
+            .replace("/storage/emulated/legacy/", "")
+            .replace("/sdcard/", "")
+            .ifEmpty { path }
+    }
+
+    /**
+     * 开始雷达扫描 - 使用 MediaStore API 查询选中路径下的音频文件
+     */
+    fun startRadarScan() {
+        val selectedPaths = _uiState.value.scanPaths
+        if (selectedPaths.isEmpty()) {
+            _uiState.value = _uiState.value.copy(
+                message = "请至少选择一个扫描目录"
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isScanning = true,
+                scanProgress = 0f,
+                scannedItems = emptyList(),
+                selectedScannedUris = emptySet()
+            )
+
+            val items = withContext(Dispatchers.IO) {
+                scanAudioFiles(selectedPaths)
+            }
+
+            _uiState.value = _uiState.value.copy(
+                isScanning = false,
+                scanProgress = 1f,
+                scannedItems = items
+            )
+        }
+    }
+
+    /**
+     * 使用 MediaStore API 扫描指定路径下的音频文件
+     *
+     * @param pathFilters 要扫描的目录路径列表，为空则扫描全部
+     */
+    private fun scanAudioFiles(pathFilters: List<String> = emptyList()): List<ScannedAudioItem> {
+        val context = getApplication<Application>()
+        val items = mutableListOf<ScannedAudioItem>()
+
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.SIZE,
+            MediaStore.Audio.Media.DATA  // 文件路径
+        )
+
+        // 构建过滤条件
+        val selectionBuilder = StringBuilder()
+        val selectionArgsList = mutableListOf<String>()
+
+        // 时长过滤：> 30秒
+        selectionBuilder.append("${MediaStore.Audio.Media.DURATION} > ?")
+        selectionArgsList.add("30000")
+
+        // 路径过滤
+        if (pathFilters.isNotEmpty()) {
+            selectionBuilder.append(" AND (")
+            pathFilters.forEachIndexed { index, path ->
+                if (index > 0) selectionBuilder.append(" OR ")
+                selectionBuilder.append("${MediaStore.Audio.Media.DATA} LIKE ?")
+                selectionArgsList.add("$path/%")
+            }
+            selectionBuilder.append(")")
+        }
+
+        val selection = selectionBuilder.toString()
+        val selectionArgs = selectionArgsList.toTypedArray()
+        val sortOrder = "${MediaStore.Audio.Media.DATE_MODIFIED} DESC"
+
+        try {
+            context.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                selectionArgs,
+                sortOrder
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val displayNameColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+                val artistColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                val albumColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+                val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.SIZE)
+                val dataColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idColumn)
+                    val contentUri = ContentUris.withAppendedId(
+                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                        id
+                    )
+
+                    val item = ScannedAudioItem(
+                        uri = contentUri,
+                        displayName = cursor.getString(displayNameColumn) ?: "未知文件",
+                        artist = cursor.getString(artistColumn),
+                        album = cursor.getString(albumColumn),
+                        duration = cursor.getLong(durationColumn),
+                        size = cursor.getLong(sizeColumn),
+                        path = cursor.getString(dataColumn)
+                    )
+                    items.add(item)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        return items
+    }
+
+    /**
+     * 切换扫描结果项的选中状态
+     */
+    fun toggleScannedItemSelection(uri: Uri) {
+        val currentSelected = _uiState.value.selectedScannedUris
+        val newSelected = if (currentSelected.contains(uri)) {
+            currentSelected - uri
+        } else {
+            currentSelected + uri
+        }
+        _uiState.value = _uiState.value.copy(selectedScannedUris = newSelected)
+    }
+
+    /**
+     * 全选所有可选的扫描结果 (排除已导入的)
+     */
+    fun selectAllScannedItems() {
+        val existingUris = _uiState.value.audioList.map { it.uri }.toSet()
+        val allSelectableUris = _uiState.value.scannedItems
+            .filter { it.uri !in existingUris }
+            .map { it.uri }
+            .toSet()
+        _uiState.value = _uiState.value.copy(selectedScannedUris = allSelectableUris)
+    }
+
+    /**
+     * 取消全选扫描结果
+     */
+    fun deselectAllScannedItems() {
+        _uiState.value = _uiState.value.copy(selectedScannedUris = emptySet())
+    }
+
+    /**
+     * 导入选中的扫描结果
+     */
+    fun importSelectedScannedItems() {
+        val selectedUris = _uiState.value.selectedScannedUris.toList()
+        if (selectedUris.isEmpty()) return
+
+        // 关闭对话框
+        _uiState.value = _uiState.value.copy(
+            showRadarDialog = false,
+            scannedItems = emptyList(),
+            selectedScannedUris = emptySet()
+        )
+
+        // 复用现有的加载逻辑
+        loadAudioFiles(selectedUris)
+    }
+
+    /**
+     * 获取已导入文件的 URI 集合 (用于在扫描结果中标记已导入)
+     */
+    fun getExistingUris(): Set<Uri> {
+        return _uiState.value.audioList.map { it.uri }.toSet()
+    }
 }
 
 /**
@@ -662,6 +1015,16 @@ sealed class RenameResult {
     data class Success(val newUri: Uri) : RenameResult()
     data class Error(val message: String) : RenameResult()
 }
+
+/**
+ * 扫描路径选项
+ */
+data class ScanPathOption(
+    val path: String,
+    val displayName: String,
+    val audioCount: Int = 0,
+    val isSelected: Boolean = false
+)
 
 /**
  * 音频保存事件（替代 LocalBroadcastManager）

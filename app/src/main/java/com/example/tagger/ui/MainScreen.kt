@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,6 +33,7 @@ import com.example.tagger.core.SensitiveCheckResult
 import com.example.tagger.core.video.AudioFormat
 import com.example.tagger.core.video.ExtractionState
 import com.example.tagger.model.AudioMetadata
+import com.example.tagger.model.ScannedAudioItem
 import com.example.tagger.ui.theme.AudioTaggerTheme
 import com.example.tagger.ui.theme.AppPrimaryColor
 import com.example.tagger.ui.theme.AppleGray1
@@ -75,7 +77,17 @@ fun MainScreen(
     onClearVideoMessage: () -> Unit = {},
     onRunVideoDiagnostic: () -> Unit = {},
     // 修复扩展名
-    onFixExtension: (AudioMetadata) -> Unit = {}
+    onFixExtension: (AudioMetadata) -> Unit = {},
+    // 雷达扫描
+    onShowRadarScan: () -> Unit = {},
+    onStartRadarScan: () -> Unit = {},
+    onToggleScannedSelection: (Uri) -> Unit = {},
+    onSelectAllScanned: () -> Unit = {},
+    onDeselectAllScanned: () -> Unit = {},
+    onImportScanned: () -> Unit = {},
+    onDismissRadarDialog: () -> Unit = {},
+    onToggleScanPath: (String) -> Unit = {},
+    onToggleAllScanPaths: () -> Unit = {}
 ) {
     val uriHandler = LocalUriHandler.current
     var showMenu by remember { mutableStateOf(false) }
@@ -148,7 +160,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0127a]", // 版本标记 - 重新启用文件名违禁词优化功能
+                            "音乐标签 [v0127c]", // 版本标记 - 雷达搜索+自定义路径过滤
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
@@ -185,6 +197,20 @@ fun MainScreen(
                                     },
                                     leadingIcon = {
                                         Icon(Icons.Outlined.VideoFile, null, tint = AppPrimaryColor)
+                                    }
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    color = AppleGray5
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("雷达搜索") },
+                                    onClick = {
+                                        onShowRadarScan()
+                                        showAddMenu = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Outlined.Radar, null, tint = AppPrimaryColor)
                                     }
                                 )
                             }
@@ -430,6 +456,27 @@ fun MainScreen(
             state = videoUiState.extractionState,
             onDismiss = onDismissProgressDialog,
             onImportAudio = onImportExtractedAudio
+        )
+    }
+
+    // 雷达扫描对话框
+    if (uiState.showRadarDialog) {
+        RadarScanDialog(
+            isScanning = uiState.isScanning,
+            scanProgress = uiState.scanProgress,
+            scannedItems = uiState.scannedItems,
+            selectedUris = uiState.selectedScannedUris,
+            existingUris = uiState.audioList.map { it.uri }.toSet(),
+            availablePaths = uiState.availablePaths,
+            selectedPaths = uiState.scanPaths,
+            onTogglePath = onToggleScanPath,
+            onToggleAllPaths = onToggleAllScanPaths,
+            onStartScan = onStartRadarScan,
+            onToggleSelection = onToggleScannedSelection,
+            onSelectAll = onSelectAllScanned,
+            onDeselectAll = onDeselectAllScanned,
+            onImport = onImportScanned,
+            onDismiss = onDismissRadarDialog
         )
     }
 }
