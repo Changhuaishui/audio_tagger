@@ -111,7 +111,7 @@ object M4aTagWriter {
     }
 
     private fun writeMetadataInternal(file: File, metadata: M4aMetadata): Result {
-        val isoFile = IsoFile(file.absolutePath)
+        val isoFile = createIsoFile(file)
 
         try {
             val moov = isoFile.getBoxes(MovieBox::class.java).firstOrNull()
@@ -311,6 +311,17 @@ object M4aTagWriter {
                 data[1] == 0x50.toByte() && // P
                 data[2] == 0x4E.toByte() && // N
                 data[3] == 0x47.toByte()    // G
+    }
+
+    /**
+     * Create IsoFile for Android.
+     *
+     * Note: isoparser-default.properties must be present in src/main/resources/
+     * for PropertyBoxParserImpl to work on Android. The file provides box type
+     * to class mappings that are loaded via getResourceAsStream().
+     */
+    private fun createIsoFile(file: File): IsoFile {
+        return IsoFile(file.absolutePath)
     }
 
     /**

@@ -148,7 +148,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0126b]", // 版本标记 - M4A标签写入使用mp4parser，支持标题/艺术家/专辑/注释
+                            "音乐标签 [v0126c]", // 版本标记 - 修复mp4parser在Android上的加载问题
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
