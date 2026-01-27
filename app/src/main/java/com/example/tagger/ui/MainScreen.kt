@@ -148,7 +148,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0126c]", // 版本标记 - 修复mp4parser在Android上的加载问题
+                            "音乐标签 [v0127a]", // 版本标记 - 重新启用文件名违禁词优化功能
                             style = MaterialTheme.typography.displaySmall
                         )
                     },

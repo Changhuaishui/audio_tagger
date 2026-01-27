@@ -41,8 +41,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val tagEditor = TagEditor(application)
     private val sensitiveChecker = SensitiveWordChecker(application)
-    // 暂时禁用以排查黑屏问题
-    private val fileNameOptimizer: FileNameOptimizer? = null // FileNameOptimizer(sensitiveChecker)
+    private val fileNameOptimizer = FileNameOptimizer(sensitiveChecker)
 
     private val _uiState = MutableStateFlow(MainUiState())
 
@@ -374,15 +373,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 1. 字符对调: "敏感" → "感敏"
      * 2. 插入分隔符: "敏感" → "敏_感"
      * 3. 删除违禁词
+     *
+     * 注意：此功能只修改文件名，不修改文件内的元数据标签。
+     * 这样可以绕过平台的文件名检测，同时保留歌曲的原始标题信息。
      */
     fun optimizeSelectedFileNames() {
-        // 暂时禁用以排查黑屏问题
-        val optimizer = fileNameOptimizer
-        if (optimizer == null) {
-            _uiState.value = _uiState.value.copy(message = "功能暂时禁用")
-            return
-        }
-
         val selectedUris = _uiState.value.selectedUris
         if (selectedUris.isEmpty()) {
             _uiState.value = _uiState.value.copy(message = "请先选择要优化的文件")
@@ -394,18 +389,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             val selectedItems = _uiState.value.audioList.filter { it.uri in selectedUris }
             var optimizedCount = 0
-            var failedCount = 0
+            var skippedCount = 0  // 无需优化的文件
+            val failedItems = mutableListOf<Pair<String, String>>()  // 文件名 -> 错误原因
             val updatedList = _uiState.value.audioList.toMutableList()
 
             for (item in selectedItems) {
-                // 获取文件名（不含扩展名）
-                val nameWithoutExt = item.displayName.substringBeforeLast('.', item.displayName)
-                val extension = item.displayName.substringAfterLast('.', "")
+                try {
+                    // 获取文件名（不含扩展名）
+                    val nameWithoutExt = item.displayName.substringBeforeLast('.', item.displayName)
+                    val extension = item.displayName.substringAfterLast('.', "")
 
-                // 优化文件名
-                val result = optimizer.optimize(nameWithoutExt)
+                    // 优化文件名
+                    val result = fileNameOptimizer.optimize(nameWithoutExt)
 
-                if (result.isChanged) {
+                    if (!result.isChanged) {
+                        skippedCount++
+                        continue
+                    }
+
                     // 构建新文件名
                     val newDisplayName = if (extension.isNotEmpty()) {
                         "${result.optimizedName}.$extension"
@@ -413,7 +414,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         result.optimizedName
                     }
 
-                    // 执行重命名
+                    // 执行重命名（只改文件名，不改元数据）
                     val renameResult = withContext(Dispatchers.IO) {
                         tagEditor.renameFile(item.uri, newDisplayName)
                     }
@@ -430,22 +431,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     updatedList[index] = updatedItem
                                 }
                                 optimizedCount++
+                            } else {
+                                failedItems.add(item.displayName to "重命名后无法读取文件")
                             }
                         }
                         is RenameResult.Error -> {
-                            failedCount++
+                            failedItems.add(item.displayName to renameResult.message)
                         }
                     }
+                } catch (e: Exception) {
+                    failedItems.add(item.displayName to (e.message ?: "未知错误"))
                 }
             }
 
             val message = buildString {
-                if (optimizedCount > 0) append("已优化 $optimizedCount 个文件")
-                if (failedCount > 0) {
-                    if (optimizedCount > 0) append("，")
-                    append("$failedCount 个失败")
+                if (optimizedCount > 0) {
+                    append("✓ 已优化 $optimizedCount 个文件名")
                 }
-                if (optimizedCount == 0 && failedCount == 0) {
+                if (skippedCount > 0) {
+                    if (isNotEmpty()) append("，")
+                    append("$skippedCount 个无需优化")
+                }
+                if (failedItems.isNotEmpty()) {
+                    if (isNotEmpty()) append("\n")
+                    append("✗ ${failedItems.size} 个失败:")
+                    failedItems.take(3).forEach { (name, reason) ->
+                        append("\n  · $name: $reason")
+                    }
+                    if (failedItems.size > 3) {
+                        append("\n  ...还有 ${failedItems.size - 3} 个")
+                    }
+                }
+                if (optimizedCount == 0 && skippedCount == 0 && failedItems.isEmpty()) {
                     append("选中的文件无需优化")
                 }
             }
