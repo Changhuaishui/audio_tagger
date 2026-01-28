@@ -160,7 +160,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0127c]", // 版本标记 - 雷达搜索+自定义路径过滤
+                            "音乐标签 [v0128a]", // 版本标记 - 修复扩展名与格式不匹配时写入失败
                             style = MaterialTheme.typography.displaySmall
                         )
                     },

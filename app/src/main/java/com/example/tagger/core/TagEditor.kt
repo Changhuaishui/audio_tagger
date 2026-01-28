@@ -248,25 +248,39 @@ class TagEditor(private val context: Context) {
         Log.d(TAG, "Writing tags to: ${file.absolutePath}")
         Log.d(TAG, "Title: ${metadata.title}, Artist: ${metadata.artist}, Album: ${metadata.album}")
 
-        // 检测实际格式
+        // 检测实际格式（优先使用实际格式，而非扩展名）
         val extension = file.extension.uppercase()
         val actualFormat = detectActualFormat(file)
         Log.d(TAG, "File extension: $extension, Actual format: $actualFormat")
 
-        // 根据格式选择写入方式
-        return when {
+        // 根据【实际格式】选择写入方式（修复扩展名与格式不匹配的问题）
+        val formatToUse = actualFormat ?: extension
+        Log.d(TAG, "Using format for write: $formatToUse")
+
+        return when (formatToUse) {
             // M4A 格式：使用 mp4parser
-            actualFormat == "M4A" || extension in listOf("M4A", "MP4") -> {
-                writeWithM4aTagWriter(file, metadata)
+            "M4A" -> {
+                // 双重验证：确保文件确实是有效的 M4A 容器
+                if (M4aTagWriter.isValidM4aFile(file)) {
+                    writeWithM4aTagWriter(file, metadata)
+                } else {
+                    Log.w(TAG, "File detected as M4A but is not a valid M4A container, trying JAudioTagger")
+                    writeWithJAudioTagger(file, metadata, actualFormat)
+                }
             }
 
             // AAC 裸流：不支持元数据
-            extension == "AAC" && !M4aTagWriter.isValidM4aFile(file) -> {
-                Log.w(TAG, "Raw AAC file detected, metadata not supported")
-                WriteResult.Error("AAC 裸流文件不支持元数据。建议转换为 M4A 或 MP3 格式后再编辑标签。")
+            "AAC" -> {
+                if (M4aTagWriter.isValidM4aFile(file)) {
+                    // 实际上是 M4A 容器中的 AAC
+                    writeWithM4aTagWriter(file, metadata)
+                } else {
+                    Log.w(TAG, "Raw AAC file detected, metadata not supported")
+                    WriteResult.Error("AAC 裸流文件不支持元数据。建议转换为 M4A 或 MP3 格式后再编辑标签。")
+                }
             }
 
-            // 其他格式：使用 JAudioTagger
+            // 其他格式（MP3, FLAC, OGG, WAV）：使用 JAudioTagger
             else -> {
                 writeWithJAudioTagger(file, metadata, actualFormat)
             }
@@ -430,7 +444,7 @@ class TagEditor(private val context: Context) {
 
         val writeResult = write(tempFile, metadata)
         if (writeResult is WriteResult.Error) {
-            Log.e(TAG, "Failed to write tags to temp file")
+            Log.e(TAG, "Failed to write tags to temp file: ${writeResult.message}")
             tempFile.delete()
             return writeResult
         }
