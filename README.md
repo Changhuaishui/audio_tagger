@@ -32,3 +32,13 @@ Android 音频标签编辑器
 JAudioTagger - 音频标签读写
 FFmpegX-Android - 视频音轨提取
 ```
+
+## Star History
+
+<a href="https://star-history.com/#Changhuaishui/audio_tagger&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Changhuaishui/audio_tagger&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Changhuaishui/audio_tagger&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=Changhuaishui/audio_tagger&type=Date" />
+ </picture>
+</a>
