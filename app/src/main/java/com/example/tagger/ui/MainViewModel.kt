@@ -63,11 +63,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     /**
-     * 加载选中的音频文件
+     * 加载选中的音频文件（自动去重，根据 filePath 检查）
      */
     fun loadAudioFiles(uris: List<Uri>) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
+
+            // 获取已导入文件的路径集合（用于去重）
+            val existingPaths = _uiState.value.audioList.map { it.filePath }.toSet()
 
             val items = withContext(Dispatchers.IO) {
                 uris.mapNotNull { uri ->
@@ -75,10 +78,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
+            // 过滤掉已存在的文件（根据 filePath 去重）
+            val newItems = items.filter { it.filePath !in existingPaths }
+            val skippedCount = items.size - newItems.size
+
+            val message = when {
+                skippedCount > 0 && newItems.isNotEmpty() ->
+                    "已加载 ${newItems.size} 个文件，跳过 $skippedCount 个重复"
+                skippedCount > 0 && newItems.isEmpty() ->
+                    "所有文件已导入过，跳过 $skippedCount 个"
+                else ->
+                    "已加载 ${newItems.size} 个文件"
+            }
+
             _uiState.value = _uiState.value.copy(
-                audioList = _uiState.value.audioList + items,
+                audioList = _uiState.value.audioList + newItems,
                 isLoading = false,
-                message = "已加载 ${items.size} 个文件"
+                message = message
             )
         }
     }
@@ -964,12 +980,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 全选所有可选的扫描结果 (排除已导入的)
+     * 全选所有可选的扫描结果 (排除已导入的，根据 filePath 判断)
      */
     fun selectAllScannedItems() {
-        val existingUris = _uiState.value.audioList.map { it.uri }.toSet()
+        val existingPaths = _uiState.value.audioList.map { it.filePath }.toSet()
         val allSelectableUris = _uiState.value.scannedItems
-            .filter { it.uri !in existingUris }
+            .filter { it.path == null || it.path !in existingPaths }
             .map { it.uri }
             .toSet()
         _uiState.value = _uiState.value.copy(selectedScannedUris = allSelectableUris)

@@ -160,7 +160,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0128a]", // 版本标记 - 修复扩展名与格式不匹配时写入失败
+                            "音乐标签 [v0128b]", // 版本标记 - 导入时去重（根据 filePath）
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
@@ -466,7 +466,7 @@ fun MainScreen(
             scanProgress = uiState.scanProgress,
             scannedItems = uiState.scannedItems,
             selectedUris = uiState.selectedScannedUris,
-            existingUris = uiState.audioList.map { it.uri }.toSet(),
+            existingPaths = uiState.audioList.map { it.filePath }.toSet(),
             availablePaths = uiState.availablePaths,
             selectedPaths = uiState.scanPaths,
             onTogglePath = onToggleScanPath,

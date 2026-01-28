@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         // 版本标记 - 用于验证新版本正在运行
-        const val VERSION_TAG = "v0127c_radar_path_filter"
+        const val VERSION_TAG = "v0128b_dedup_by_filepath"
         private const val TAG = "MainActivity"
     }
 

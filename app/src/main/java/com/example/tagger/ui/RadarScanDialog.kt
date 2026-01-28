@@ -39,7 +39,7 @@ fun RadarScanDialog(
     scanProgress: Float,
     scannedItems: List<ScannedAudioItem>,
     selectedUris: Set<Uri>,
-    existingUris: Set<Uri>,
+    existingPaths: Set<String>,  // 已导入文件的路径（用于去重）
     // 路径选择相关
     availablePaths: List<ScanPathOption> = emptyList(),
     selectedPaths: List<String> = emptyList(),
@@ -59,8 +59,8 @@ fun RadarScanDialog(
     val isScanningFiles = isScanning && availablePaths.isNotEmpty()
     val hasResults = scannedItems.isNotEmpty()
 
-    // 可选中的项目 (排除已导入的)
-    val selectableItems = scannedItems.filter { it.uri !in existingUris }
+    // 可选中的项目 (排除已导入的，根据 filePath 判断)
+    val selectableItems = scannedItems.filter { it.path == null || it.path !in existingPaths }
     val allSelectableUris = selectableItems.map { it.uri }.toSet()
     val isAllSelected = allSelectableUris.isNotEmpty() && selectedUris.containsAll(allSelectableUris)
 
@@ -156,7 +156,7 @@ fun RadarScanDialog(
                             ScanResultList(
                                 items = scannedItems,
                                 selectedUris = selectedUris,
-                                existingUris = existingUris,
+                                existingPaths = existingPaths,
                                 onToggleSelection = onToggleSelection
                             )
                         }
@@ -245,7 +245,7 @@ fun RadarScanDialog(
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
-                                    val existingInScan = scannedItems.count { it.uri in existingUris }
+                                    val existingInScan = scannedItems.count { it.path != null && it.path in existingPaths }
                                     if (existingInScan > 0) {
                                         Text(
                                             "其中 $existingInScan 个已导入",
@@ -442,7 +442,7 @@ private fun EmptyScanResult() {
 private fun ScanResultList(
     items: List<ScannedAudioItem>,
     selectedUris: Set<Uri>,
-    existingUris: Set<Uri>,
+    existingPaths: Set<String>,  // 已导入文件的路径（用于去重）
     onToggleSelection: (Uri) -> Unit
 ) {
     LazyColumn(
@@ -450,7 +450,7 @@ private fun ScanResultList(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(items, key = { it.uri.toString() }) { item ->
-            val isExisting = item.uri in existingUris
+            val isExisting = item.path != null && item.path in existingPaths
             val isSelected = item.uri in selectedUris
 
             ScannedAudioItemRow(
