@@ -33,6 +33,8 @@ import com.example.tagger.core.SensitiveCheckResult
 import com.example.tagger.core.video.AudioFormat
 import com.example.tagger.core.video.ExtractionState
 import com.example.tagger.model.AudioMetadata
+import com.example.tagger.model.ObfuscationMode
+import com.example.tagger.model.ReplacementRule
 import com.example.tagger.model.ScannedAudioItem
 import com.example.tagger.ui.theme.AudioTaggerTheme
 import com.example.tagger.ui.theme.AppPrimaryColor
@@ -87,7 +89,22 @@ fun MainScreen(
     onImportScanned: () -> Unit = {},
     onDismissRadarDialog: () -> Unit = {},
     onToggleScanPath: (String) -> Unit = {},
-    onToggleAllScanPaths: () -> Unit = {}
+    onToggleAllScanPaths: () -> Unit = {},
+    // 处理方案相关
+    onShowProcessScheme: () -> Unit = {},
+    onDismissProcessScheme: () -> Unit = {},
+    onSetUseReplacement: (Boolean) -> Unit = {},
+    onSetUseObfuscation: (Boolean) -> Unit = {},
+    onSetSaveMapping: (Boolean) -> Unit = {},
+    onShowReplacementRules: () -> Unit = {},
+    onDismissReplacementRules: () -> Unit = {},
+    onShowObfuscationMode: () -> Unit = {},
+    onDismissObfuscationMode: () -> Unit = {},
+    onSelectObfuscationMode: (ObfuscationMode) -> Unit = {},
+    onAddReplacementRule: (String, String) -> Unit = { _, _ -> },
+    onDeleteReplacementRule: (String) -> Unit = {},
+    onToggleReplacementRule: (String) -> Unit = {},
+    onExecuteProcessScheme: () -> Unit = {}
 ) {
     val uriHandler = LocalUriHandler.current
     var showMenu by remember { mutableStateOf(false) }
@@ -160,7 +177,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0128b]", // 版本标记 - 导入时去重（根据 filePath）
+                            "音乐标签 [v0129c]", // 版本标记 - 修复MediaStore文件重命名失败
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
@@ -320,6 +337,19 @@ fun MainScreen(
                             .padding(16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        // 处理方案按钮
+                        OutlinedButton(
+                            onClick = onShowProcessScheme,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Tune,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("处理方案")
+                        }
                         // 优化违禁词按钮
                         Button(
                             onClick = onOptimizeSelected,
@@ -477,6 +507,45 @@ fun MainScreen(
             onDeselectAll = onDeselectAllScanned,
             onImport = onImportScanned,
             onDismiss = onDismissRadarDialog
+        )
+    }
+
+    // 处理方案对话框
+    if (uiState.showProcessSchemeDialog) {
+        ProcessSchemeDialog(
+            selectedCount = uiState.selectedUris.size,
+            replacementRules = uiState.replacementRules,
+            selectedObfuscationMode = uiState.selectedObfuscationMode,
+            useReplacement = uiState.useReplacement,
+            useObfuscation = uiState.useObfuscation,
+            saveMapping = uiState.saveMapping,
+            onUseReplacementChange = onSetUseReplacement,
+            onUseObfuscationChange = onSetUseObfuscation,
+            onSaveMappingChange = onSetSaveMapping,
+            onManageRules = onShowReplacementRules,
+            onSelectMode = onShowObfuscationMode,
+            onExecute = onExecuteProcessScheme,
+            onDismiss = onDismissProcessScheme
+        )
+    }
+
+    // 替换规则管理弹窗
+    if (uiState.showReplacementRulesSheet) {
+        ReplacementRulesSheet(
+            rules = uiState.replacementRules,
+            onAddRule = onAddReplacementRule,
+            onDeleteRule = onDeleteReplacementRule,
+            onToggleRule = onToggleReplacementRule,
+            onDismiss = onDismissReplacementRules
+        )
+    }
+
+    // 混淆模式选择弹窗
+    if (uiState.showObfuscationModeSheet) {
+        ObfuscationModeSheet(
+            currentMode = uiState.selectedObfuscationMode,
+            onModeSelected = onSelectObfuscationMode,
+            onDismiss = onDismissObfuscationMode
         )
     }
 }

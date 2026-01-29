@@ -587,8 +587,18 @@ class TagEditor(private val context: Context) {
         return try {
             Log.d(TAG, "Renaming file: $uri -> $newName")
 
-            // 策略1: 优先尝试直接文件重命名（更可靠）
             val filePath = getFilePathFromUri(uri)
+
+            // 策略1: 对于 MediaStore Uri，使用 ContentResolver.update()
+            if (isMediaStoreUri(uri) && filePath != null) {
+                val result = renameViaMediaStore(uri, filePath, newName)
+                if (result != null) {
+                    return result
+                }
+                Log.w(TAG, "MediaStore rename failed, trying direct file rename")
+            }
+
+            // 策略2: 尝试直接文件重命名
             if (filePath != null) {
                 val file = File(filePath)
                 if (file.exists() && file.canWrite()) {
@@ -604,7 +614,7 @@ class TagEditor(private val context: Context) {
                 }
             }
 
-            // 策略2: 使用 DocumentsContract（需要 SAF 写权限）
+            // 策略3: 使用 DocumentsContract（需要 SAF 写权限）
             if (DocumentsContract.isDocumentUri(context, uri)) {
                 // 先检查是否有写权限
                 val hasWritePermission = context.checkUriPermission(
@@ -636,7 +646,7 @@ class TagEditor(private val context: Context) {
                 }
             }
 
-            // 策略3: 如果有文件路径但之前重命名失败，尝试复制+删除
+            // 策略4: 如果有文件路径但之前重命名失败，尝试复制+删除
             if (filePath != null) {
                 val file = File(filePath)
                 if (file.exists()) {
@@ -646,6 +656,14 @@ class TagEditor(private val context: Context) {
                         if (file.delete()) {
                             Log.d(TAG, "Copy+delete rename succeeded: ${newFile.absolutePath}")
                             notifyMediaScanner(Uri.fromFile(newFile), newFile.absolutePath)
+                            // 删除旧的 MediaStore 记录
+                            if (isMediaStoreUri(uri)) {
+                                try {
+                                    context.contentResolver.delete(uri, null, null)
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Failed to delete old MediaStore entry", e)
+                                }
+                            }
                             return RenameResult.Success(Uri.fromFile(newFile))
                         } else {
                             // 复制成功但删除失败，删除复制的文件
@@ -665,6 +683,86 @@ class TagEditor(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to rename file", e)
             RenameResult.Error("重命名失败: ${e.message ?: "未知错误"}")
+        }
+    }
+
+    /**
+     * 检查是否为 MediaStore Uri
+     */
+    private fun isMediaStoreUri(uri: Uri): Boolean {
+        return uri.authority == "media" ||
+               uri.authority == "com.android.providers.media.documents" ||
+               uri.toString().contains("content://media/")
+    }
+
+    /**
+     * 通过 MediaStore API 重命名文件（适用于 Android 10+ Scoped Storage）
+     *
+     * @return RenameResult 如果成功，否则 null
+     */
+    private fun renameViaMediaStore(uri: Uri, filePath: String, newName: String): RenameResult? {
+        return try {
+            val file = File(filePath)
+            val newFile = File(file.parent, newName)
+
+            Log.d(TAG, "Attempting MediaStore rename: $filePath -> ${newFile.absolutePath}")
+
+            // 方式1: 直接操作文件系统，然后更新 MediaStore
+            // 这在某些设备上有效，因为应用可能有文件的所有权
+            if (file.renameTo(newFile)) {
+                Log.d(TAG, "File.renameTo succeeded, updating MediaStore")
+
+                // 更新 MediaStore 记录
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Audio.Media.DISPLAY_NAME, newName)
+                    put(android.provider.MediaStore.Audio.Media.DATA, newFile.absolutePath)
+                }
+
+                try {
+                    val updated = context.contentResolver.update(uri, values, null, null)
+                    Log.d(TAG, "MediaStore update result: $updated rows")
+                } catch (e: Exception) {
+                    Log.w(TAG, "MediaStore update failed, triggering rescan", e)
+                }
+
+                // 无论 MediaStore 更新是否成功，都触发扫描
+                notifyMediaScanner(Uri.fromFile(newFile), newFile.absolutePath)
+
+                // 尝试删除旧路径的 MediaStore 记录
+                try {
+                    MediaScannerConnection.scanFile(context, arrayOf(filePath), null) { _, _ -> }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to scan old path", e)
+                }
+
+                return RenameResult.Success(Uri.fromFile(newFile))
+            }
+
+            // 方式2: 使用 ContentResolver 更新 DISPLAY_NAME（某些系统支持）
+            Log.d(TAG, "Direct rename failed, trying ContentValues update")
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Audio.Media.DISPLAY_NAME, newName)
+            }
+
+            val updated = context.contentResolver.update(uri, values, null, null)
+            if (updated > 0) {
+                Log.d(TAG, "ContentValues DISPLAY_NAME update succeeded")
+                // 重新查询获取新的文件路径
+                val newPath = getFilePathFromUri(uri)
+                if (newPath != null) {
+                    notifyMediaScanner(uri, newPath)
+                    return RenameResult.Success(uri)
+                }
+            }
+
+            Log.w(TAG, "MediaStore rename methods failed")
+            null
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException in MediaStore rename - need user permission", e)
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "MediaStore rename failed", e)
+            null
         }
     }
 
