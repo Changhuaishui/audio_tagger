@@ -5,10 +5,13 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,16 +21,19 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.example.tagger.ui.MainScreen
 import com.example.tagger.ui.MainViewModel
+import com.example.tagger.ui.PendingRenameAction
 import com.example.tagger.ui.theme.AudioTaggerTheme
 import com.example.tagger.ui.video.VideoViewModel
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     companion object {
         // 版本标记 - 用于验证新版本正在运行
-        const val VERSION_TAG = "v0129d_open_with_external"
+        const val VERSION_TAG = "v0129e_mediastore_write_permission"
         private const val TAG = "MainActivity"
     }
 
@@ -92,6 +98,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val mediaStoreWriteLauncher: ActivityResultLauncher<IntentSenderRequest> =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            if (result.resultCode == RESULT_OK) {
+                Log.d(TAG, "MediaStore write permission granted")
+                viewModel.onWritePermissionGranted()
+            } else {
+                Log.w(TAG, "MediaStore write permission denied")
+                viewModel.onWritePermissionDenied()
+            }
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -100,6 +117,19 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "当前版本: $VERSION_TAG")
         Log.d(TAG, "功能: 视频音轨提取")
         Log.d(TAG, "===============================")
+
+        // 监听 MediaStore 写权限请求
+        lifecycleScope.launch {
+            viewModel.writePermissionRequest.collect { request ->
+                try {
+                    val intent = MediaStore.createWriteRequest(contentResolver, request.uris)
+                    mediaStoreWriteLauncher.launch(IntentSenderRequest.Builder(intent).build())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to create write request", e)
+                    viewModel.onWritePermissionDenied()
+                }
+            }
+        }
 
         setContent {
             AudioTaggerTheme {
@@ -133,7 +163,7 @@ class MainActivity : ComponentActivity() {
                         onToggleItemSelection = { viewModel.toggleItemSelection(it) },
                         onToggleSelectAll = { viewModel.toggleSelectAll() },
                         onRemoveSelected = { viewModel.removeSelectedItems() },
-                        onOptimizeSelected = { viewModel.optimizeSelectedFileNames() },
+                        onOptimizeSelected = { viewModel.requestWritePermissionAndRename(PendingRenameAction.OPTIMIZE_FILE_NAMES) },
                         // 视频提取
                         onSelectVideoFormat = { videoViewModel.selectFormat(it) },
                         onSelectVideoTrack = { videoViewModel.selectTrack(it) },
@@ -186,7 +216,7 @@ class MainActivity : ComponentActivity() {
                         onAddReplacementRule = { find, replace -> viewModel.addReplacementRule(find, replace) },
                         onDeleteReplacementRule = { viewModel.deleteReplacementRule(it) },
                         onToggleReplacementRule = { viewModel.toggleReplacementRule(it) },
-                        onExecuteProcessScheme = { viewModel.executeProcessScheme() },
+                        onExecuteProcessScheme = { viewModel.requestWritePermissionAndRename(PendingRenameAction.EXECUTE_PROCESS_SCHEME) },
                         onOpenWithExternalApp = {
                             val selectedItems = uiState.audioList.filter { it.uri in uiState.selectedUris }
                             selectedItems.forEach { openWithExternalApp(it.uri) }

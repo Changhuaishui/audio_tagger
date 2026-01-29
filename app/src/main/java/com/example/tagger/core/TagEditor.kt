@@ -757,6 +757,9 @@ class TagEditor(private val context: Context) {
 
             Log.w(TAG, "MediaStore rename methods failed")
             null
+        } catch (e: android.app.RecoverableSecurityException) {
+            Log.e(TAG, "RecoverableSecurityException in MediaStore rename - need user permission", e)
+            RenameResult.NeedPermission(listOf(uri))
         } catch (e: SecurityException) {
             Log.e(TAG, "SecurityException in MediaStore rename - need user permission", e)
             null

@@ -77,6 +77,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val audioSavedEvent: SharedFlow<AudioSavedEvent> = _audioSavedEvent.asSharedFlow()
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
+    /** 请求 MediaStore 写权限的事件 */
+    private val _writePermissionRequest = MutableSharedFlow<WritePermissionRequest>()
+    val writePermissionRequest: SharedFlow<WritePermissionRequest> = _writePermissionRequest.asSharedFlow()
+
+    /** 待执行的重命名操作（等待权限授予后重试） */
+    private var pendingRenameAction: PendingRenameAction? = null
+
     /**
      * 加载选中的音频文件（自动去重，根据 filePath 检查）
      */
@@ -216,6 +223,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
                             message = "重命名失败: ${renameResult.message}"
+                        )
+                        return@launch
+                    }
+                    is RenameResult.NeedPermission -> {
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            message = "需要写权限才能重命名文件"
                         )
                         return@launch
                     }
@@ -480,6 +494,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         is RenameResult.Error -> {
                             failedItems.add(item.displayName to renameResult.message)
                         }
+                        is RenameResult.NeedPermission -> {
+                            failedItems.add(item.displayName to "需要写权限")
+                        }
                     }
                 } catch (e: Exception) {
                     failedItems.add(item.displayName to (e.message ?: "未知错误"))
@@ -690,6 +707,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
                         message = "修复失败: ${result.message}"
+                    )
+                }
+                is RenameResult.NeedPermission -> {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        message = "需要写权限才能修复扩展名"
                     )
                 }
             }
@@ -1237,6 +1260,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         is RenameResult.Error -> {
                             failedItems.add(item.displayName to renameResult.message)
                         }
+                        is RenameResult.NeedPermission -> {
+                            failedItems.add(item.displayName to "需要写权限")
+                        }
                     }
                 } catch (e: Exception) {
                     failedItems.add(item.displayName to (e.message ?: "未知错误"))
@@ -1277,6 +1303,63 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
+
+    /**
+     * 收集选中项中的 MediaStore URI
+     */
+    private fun collectMediaStoreUris(items: List<AudioMetadata>): List<Uri> {
+        return items.filter { item ->
+            item.uri.authority == "media" || item.uri.toString().contains("media")
+        }.map { it.uri }
+    }
+
+    /**
+     * 请求 MediaStore 写权限（在批量重命名前调用）
+     */
+    fun requestWritePermissionAndRename(action: PendingRenameAction) {
+        val selectedUris = _uiState.value.selectedUris
+        val selectedItems = _uiState.value.audioList.filter { it.uri in selectedUris }
+        val mediaStoreUris = collectMediaStoreUris(selectedItems)
+
+        if (mediaStoreUris.isEmpty()) {
+            // 没有 MediaStore URI，直接执行
+            executeRenameAction(action)
+            return
+        }
+
+        // 保存待执行操作，请求权限
+        pendingRenameAction = action
+        viewModelScope.launch {
+            _writePermissionRequest.emit(WritePermissionRequest(mediaStoreUris))
+        }
+    }
+
+    /**
+     * 写权限授予后调用，执行待处理的重命名操作
+     */
+    fun onWritePermissionGranted() {
+        val action = pendingRenameAction ?: return
+        pendingRenameAction = null
+        executeRenameAction(action)
+    }
+
+    /**
+     * 写权限被拒绝
+     */
+    fun onWritePermissionDenied() {
+        pendingRenameAction = null
+        _uiState.value = _uiState.value.copy(
+            isLoading = false,
+            message = "未获得写权限，无法重命名文件"
+        )
+    }
+
+    private fun executeRenameAction(action: PendingRenameAction) {
+        when (action) {
+            PendingRenameAction.OPTIMIZE_FILE_NAMES -> optimizeSelectedFileNames()
+            PendingRenameAction.EXECUTE_PROCESS_SCHEME -> executeProcessScheme()
+        }
+    }
 }
 
 /**
@@ -1285,6 +1368,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 sealed class RenameResult {
     data class Success(val newUri: Uri) : RenameResult()
     data class Error(val message: String) : RenameResult()
+    data class NeedPermission(val uris: List<Uri>) : RenameResult()
+}
+
+/**
+ * MediaStore 写权限请求事件
+ */
+data class WritePermissionRequest(val uris: List<Uri>)
+
+/**
+ * 待执行的重命名操作类型
+ */
+enum class PendingRenameAction {
+    OPTIMIZE_FILE_NAMES,
+    EXECUTE_PROCESS_SCHEME
 }
 
 /**
