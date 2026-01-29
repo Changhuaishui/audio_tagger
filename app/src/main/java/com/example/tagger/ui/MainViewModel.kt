@@ -8,11 +8,15 @@ import android.provider.MediaStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.tagger.core.FileNameOptimizer
+import com.example.tagger.core.FileNameProcessor
 import com.example.tagger.core.SensitiveCheckResult
 import com.example.tagger.core.SensitiveWordChecker
 import com.example.tagger.core.TagEditor
 import com.example.tagger.core.WriteResult
+import com.example.tagger.data.UserPreferencesRepository
 import com.example.tagger.model.AudioMetadata
+import com.example.tagger.model.ObfuscationMode
+import com.example.tagger.model.ReplacementRule
 import com.example.tagger.model.ScannedAudioItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -45,7 +49,16 @@ data class MainUiState(
     val scannedItems: List<ScannedAudioItem> = emptyList(),
     val selectedScannedUris: Set<Uri> = emptySet(),
     val scanPaths: List<String> = emptyList(),  // 用户选择的扫描路径
-    val availablePaths: List<ScanPathOption> = emptyList()  // 可选的路径列表
+    val availablePaths: List<ScanPathOption> = emptyList(),  // 可选的路径列表
+    // 处理方案相关
+    val showProcessSchemeDialog: Boolean = false,
+    val showReplacementRulesSheet: Boolean = false,
+    val showObfuscationModeSheet: Boolean = false,
+    val replacementRules: List<ReplacementRule> = emptyList(),
+    val selectedObfuscationMode: ObfuscationMode? = null,
+    val useReplacement: Boolean = false,
+    val useObfuscation: Boolean = false,
+    val saveMapping: Boolean = true
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -53,6 +66,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val tagEditor = TagEditor(application)
     private val sensitiveChecker = SensitiveWordChecker(application)
     private val fileNameOptimizer = FileNameOptimizer(sensitiveChecker)
+    private val preferencesRepository = UserPreferencesRepository(application)
+    private val fileNameProcessor = FileNameProcessor(preferencesRepository)
 
     private val _uiState = MutableStateFlow(MainUiState())
 
@@ -1021,6 +1036,246 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun getExistingUris(): Set<Uri> {
         return _uiState.value.audioList.map { it.uri }.toSet()
+    }
+
+    // ==================== 处理方案功能 ====================
+
+    /**
+     * 显示处理方案对话框
+     */
+    fun showProcessSchemeDialog() {
+        // 先加载最新的替换规则
+        viewModelScope.launch {
+            val rules = preferencesRepository.getReplacementRules()
+            _uiState.value = _uiState.value.copy(
+                showProcessSchemeDialog = true,
+                replacementRules = rules
+            )
+        }
+    }
+
+    /**
+     * 关闭处理方案对话框
+     */
+    fun dismissProcessSchemeDialog() {
+        _uiState.value = _uiState.value.copy(
+            showProcessSchemeDialog = false,
+            useReplacement = false,
+            useObfuscation = false
+        )
+    }
+
+    /**
+     * 切换是否使用替换规则
+     */
+    fun setUseReplacement(use: Boolean) {
+        _uiState.value = _uiState.value.copy(useReplacement = use)
+    }
+
+    /**
+     * 切换是否使用混淆
+     */
+    fun setUseObfuscation(use: Boolean) {
+        _uiState.value = _uiState.value.copy(useObfuscation = use)
+    }
+
+    /**
+     * 设置是否保存映射
+     */
+    fun setSaveMapping(save: Boolean) {
+        _uiState.value = _uiState.value.copy(saveMapping = save)
+    }
+
+    /**
+     * 显示替换规则管理弹窗
+     */
+    fun showReplacementRulesSheet() {
+        _uiState.value = _uiState.value.copy(showReplacementRulesSheet = true)
+    }
+
+    /**
+     * 关闭替换规则管理弹窗
+     */
+    fun dismissReplacementRulesSheet() {
+        _uiState.value = _uiState.value.copy(showReplacementRulesSheet = false)
+    }
+
+    /**
+     * 显示混淆模式选择弹窗
+     */
+    fun showObfuscationModeSheet() {
+        _uiState.value = _uiState.value.copy(showObfuscationModeSheet = true)
+    }
+
+    /**
+     * 关闭混淆模式选择弹窗
+     */
+    fun dismissObfuscationModeSheet() {
+        _uiState.value = _uiState.value.copy(showObfuscationModeSheet = false)
+    }
+
+    /**
+     * 选择混淆模式
+     */
+    fun selectObfuscationMode(mode: ObfuscationMode) {
+        _uiState.value = _uiState.value.copy(selectedObfuscationMode = mode)
+    }
+
+    /**
+     * 添加替换规则
+     */
+    fun addReplacementRule(findText: String, replaceWith: String) {
+        if (findText.isEmpty()) return
+
+        viewModelScope.launch {
+            val rule = ReplacementRule(
+                findText = findText,
+                replaceWith = replaceWith
+            )
+            preferencesRepository.addReplacementRule(rule)
+            // 刷新规则列表
+            val rules = preferencesRepository.getReplacementRules()
+            _uiState.value = _uiState.value.copy(replacementRules = rules)
+        }
+    }
+
+    /**
+     * 删除替换规则
+     */
+    fun deleteReplacementRule(ruleId: String) {
+        viewModelScope.launch {
+            preferencesRepository.deleteReplacementRule(ruleId)
+            // 刷新规则列表
+            val rules = preferencesRepository.getReplacementRules()
+            _uiState.value = _uiState.value.copy(replacementRules = rules)
+        }
+    }
+
+    /**
+     * 切换规则启用状态
+     */
+    fun toggleReplacementRule(ruleId: String) {
+        viewModelScope.launch {
+            preferencesRepository.toggleRuleEnabled(ruleId)
+            // 刷新规则列表
+            val rules = preferencesRepository.getReplacementRules()
+            _uiState.value = _uiState.value.copy(replacementRules = rules)
+        }
+    }
+
+    /**
+     * 执行处理方案
+     */
+    fun executeProcessScheme() {
+        val state = _uiState.value
+        val selectedUris = state.selectedUris
+        if (selectedUris.isEmpty()) {
+            _uiState.value = state.copy(message = "请先选择要处理的文件")
+            return
+        }
+
+        if (!state.useReplacement && !state.useObfuscation) {
+            _uiState.value = state.copy(message = "请至少选择一种处理方式")
+            return
+        }
+
+        if (state.useObfuscation && state.selectedObfuscationMode == null) {
+            _uiState.value = state.copy(message = "请先选择混淆模式")
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isLoading = true,
+                showProcessSchemeDialog = false
+            )
+
+            val selectedItems = _uiState.value.audioList.filter { it.uri in selectedUris }
+            var processedCount = 0
+            var skippedCount = 0
+            val failedItems = mutableListOf<Pair<String, String>>()
+            val updatedList = _uiState.value.audioList.toMutableList()
+
+            for (item in selectedItems) {
+                try {
+                    // 处理文件名
+                    val newFileName = fileNameProcessor.processFileName(
+                        metadata = item,
+                        useReplacement = state.useReplacement,
+                        useObfuscation = state.useObfuscation,
+                        obfuscationMode = state.selectedObfuscationMode,
+                        saveMapping = state.saveMapping
+                    )
+
+                    // 检查文件名是否有变化
+                    if (newFileName == item.displayName) {
+                        skippedCount++
+                        continue
+                    }
+
+                    // 执行重命名
+                    val renameResult = withContext(Dispatchers.IO) {
+                        tagEditor.renameFile(item.uri, newFileName)
+                    }
+
+                    when (renameResult) {
+                        is RenameResult.Success -> {
+                            // 重新读取文件信息
+                            val updatedItem = withContext(Dispatchers.IO) {
+                                tagEditor.readFromUri(renameResult.newUri)
+                            }
+                            if (updatedItem != null) {
+                                val index = updatedList.indexOfFirst { it.uri == item.uri }
+                                if (index >= 0) {
+                                    updatedList[index] = updatedItem
+                                }
+                                processedCount++
+                            } else {
+                                failedItems.add(item.displayName to "重命名后无法读取文件")
+                            }
+                        }
+                        is RenameResult.Error -> {
+                            failedItems.add(item.displayName to renameResult.message)
+                        }
+                    }
+                } catch (e: Exception) {
+                    failedItems.add(item.displayName to (e.message ?: "未知错误"))
+                }
+            }
+
+            val message = buildString {
+                if (processedCount > 0) {
+                    append("✓ 已处理 $processedCount 个文件")
+                }
+                if (skippedCount > 0) {
+                    if (isNotEmpty()) append("，")
+                    append("$skippedCount 个无需处理")
+                }
+                if (failedItems.isNotEmpty()) {
+                    if (isNotEmpty()) append("\n")
+                    append("✗ ${failedItems.size} 个失败:")
+                    failedItems.take(3).forEach { (name, reason) ->
+                        append("\n  · $name: $reason")
+                    }
+                    if (failedItems.size > 3) {
+                        append("\n  ...还有 ${failedItems.size - 3} 个")
+                    }
+                }
+                if (processedCount == 0 && skippedCount == 0 && failedItems.isEmpty()) {
+                    append("选中的文件无需处理")
+                }
+            }
+
+            _uiState.value = _uiState.value.copy(
+                audioList = updatedList,
+                selectedUris = emptySet(),
+                isSelectionMode = false,
+                isLoading = false,
+                message = message,
+                useReplacement = false,
+                useObfuscation = false
+            )
+        }
     }
 }
 

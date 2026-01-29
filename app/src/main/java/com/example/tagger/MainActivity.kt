@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         // 版本标记 - 用于验证新版本正在运行
-        const val VERSION_TAG = "v0128b_dedup_by_filepath"
+        const val VERSION_TAG = "v0129b_radar_permission_fix"
         private const val TAG = "MainActivity"
     }
 
@@ -162,7 +162,7 @@ class MainActivity : ComponentActivity() {
                         // 修复扩展名
                         onFixExtension = { viewModel.fixFileExtension(it) },
                         // 雷达扫描
-                        onShowRadarScan = { viewModel.showRadarScanDialog() },
+                        onShowRadarScan = { checkPermissionAndShowRadarScan() },
                         onStartRadarScan = { viewModel.startRadarScan() },
                         onToggleScannedSelection = { viewModel.toggleScannedItemSelection(it) },
                         onSelectAllScanned = { viewModel.selectAllScannedItems() },
@@ -170,9 +170,52 @@ class MainActivity : ComponentActivity() {
                         onImportScanned = { viewModel.importSelectedScannedItems() },
                         onDismissRadarDialog = { viewModel.dismissRadarDialog() },
                         onToggleScanPath = { viewModel.toggleScanPath(it) },
-                        onToggleAllScanPaths = { viewModel.toggleAllScanPaths() }
+                        onToggleAllScanPaths = { viewModel.toggleAllScanPaths() },
+                        // 处理方案
+                        onShowProcessScheme = { viewModel.showProcessSchemeDialog() },
+                        onDismissProcessScheme = { viewModel.dismissProcessSchemeDialog() },
+                        onSetUseReplacement = { viewModel.setUseReplacement(it) },
+                        onSetUseObfuscation = { viewModel.setUseObfuscation(it) },
+                        onSetSaveMapping = { viewModel.setSaveMapping(it) },
+                        onShowReplacementRules = { viewModel.showReplacementRulesSheet() },
+                        onDismissReplacementRules = { viewModel.dismissReplacementRulesSheet() },
+                        onShowObfuscationMode = { viewModel.showObfuscationModeSheet() },
+                        onDismissObfuscationMode = { viewModel.dismissObfuscationModeSheet() },
+                        onSelectObfuscationMode = { viewModel.selectObfuscationMode(it) },
+                        onAddReplacementRule = { find, replace -> viewModel.addReplacementRule(find, replace) },
+                        onDeleteReplacementRule = { viewModel.deleteReplacementRule(it) },
+                        onToggleReplacementRule = { viewModel.toggleReplacementRule(it) },
+                        onExecuteProcessScheme = { viewModel.executeProcessScheme() }
                     )
                 }
+            }
+        }
+    }
+
+    private val radarPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            viewModel.showRadarScanDialog()
+        } else {
+            Toast.makeText(this, "需要音频读取权限才能扫描", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun checkPermissionAndShowRadarScan() {
+        when {
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_MEDIA_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED -> {
+                viewModel.showRadarScanDialog()
+            }
+            shouldShowRequestPermissionRationale(Manifest.permission.READ_MEDIA_AUDIO) -> {
+                Toast.makeText(this, "需要音频读取权限来扫描设备上的音频文件", Toast.LENGTH_LONG).show()
+                radarPermissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
+            }
+            else -> {
+                radarPermissionLauncher.launch(Manifest.permission.READ_MEDIA_AUDIO)
             }
         }
     }

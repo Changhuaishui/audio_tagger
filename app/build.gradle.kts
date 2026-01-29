@@ -71,6 +71,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
 
+    // DataStore for preferences persistence
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+
     // Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
