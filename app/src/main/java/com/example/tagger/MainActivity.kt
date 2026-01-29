@@ -3,6 +3,7 @@ package com.example.tagger
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -26,7 +27,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         // 版本标记 - 用于验证新版本正在运行
-        const val VERSION_TAG = "v0129b_radar_permission_fix"
+        const val VERSION_TAG = "v0129d_open_with_external"
         private const val TAG = "MainActivity"
     }
 
@@ -185,7 +186,11 @@ class MainActivity : ComponentActivity() {
                         onAddReplacementRule = { find, replace -> viewModel.addReplacementRule(find, replace) },
                         onDeleteReplacementRule = { viewModel.deleteReplacementRule(it) },
                         onToggleReplacementRule = { viewModel.toggleReplacementRule(it) },
-                        onExecuteProcessScheme = { viewModel.executeProcessScheme() }
+                        onExecuteProcessScheme = { viewModel.executeProcessScheme() },
+                        onOpenWithExternalApp = {
+                            val selectedItems = uiState.audioList.filter { it.uri in uiState.selectedUris }
+                            selectedItems.forEach { openWithExternalApp(it.uri) }
+                        }
                     )
                 }
             }
@@ -268,6 +273,24 @@ class MainActivity : ComponentActivity() {
                 "audio/*"
             )
         )
+    }
+
+    private fun openWithExternalApp(uri: Uri) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, contentResolver.getType(uri) ?: "audio/*")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            if (intent.resolveActivity(packageManager) != null) {
+                startActivity(Intent.createChooser(intent, "选择应用打开"))
+            } else {
+                Toast.makeText(this, "未找到可打开音频文件的应用，请先安装网易云音乐", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: android.content.ActivityNotFoundException) {
+            Toast.makeText(this, "未找到可打开音频文件的应用，请先安装网易云音乐", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "无法打开文件: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun launchVideoFilePicker() {

@@ -8,7 +8,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -104,7 +106,9 @@ fun MainScreen(
     onAddReplacementRule: (String, String) -> Unit = { _, _ -> },
     onDeleteReplacementRule: (String) -> Unit = {},
     onToggleReplacementRule: (String) -> Unit = {},
-    onExecuteProcessScheme: () -> Unit = {}
+    onExecuteProcessScheme: () -> Unit = {},
+    // 外部应用打开（选中的文件）
+    onOpenWithExternalApp: () -> Unit = {}
 ) {
     val uriHandler = LocalUriHandler.current
     var showMenu by remember { mutableStateOf(false) }
@@ -177,7 +181,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0129c]", // 版本标记 - 修复MediaStore文件重命名失败
+                            "音乐标签 [v0129d]", // 版本标记 - 支持用外部应用打开音频
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
@@ -334,9 +338,23 @@ fun MainScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
                             .padding(16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
+                        // 用其他应用打开
+                        OutlinedButton(
+                            onClick = onOpenWithExternalApp,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Share,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("打开")
+                        }
                         // 处理方案按钮
                         OutlinedButton(
                             onClick = onShowProcessScheme,
