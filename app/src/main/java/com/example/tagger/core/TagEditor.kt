@@ -493,10 +493,18 @@ class TagEditor(private val context: Context) {
                 return null
             }
 
-            inputStream.use { input ->
+            // 注意：不使用 inputStream.use{}，因为某些 file:// URI 在 close() 时
+            // 会抛出 EIO 错误，即使数据已经完整复制。我们手动处理 close。
+            try {
                 FileOutputStream(tempFile).use { output ->
-                    val bytes = input.copyTo(output)
+                    val bytes = inputStream.copyTo(output)
                     Log.d(TAG, "Copied $bytes bytes to ${tempFile.absolutePath}")
+                }
+            } finally {
+                try {
+                    inputStream.close()
+                } catch (closeEx: Exception) {
+                    Log.w(TAG, "inputStream.close() failed (data already copied, ignoring): ${closeEx.message}")
                 }
             }
             tempFile
