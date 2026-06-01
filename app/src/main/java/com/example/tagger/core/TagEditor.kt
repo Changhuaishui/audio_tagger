@@ -170,7 +170,17 @@ class TagEditor(private val context: Context) {
             return null
         }
         Log.d(TAG, "copyToCache succeeded: ${tempFile.absolutePath}")
-        val metadata = read(tempFile, uri) ?: return null
+        val metadata = try {
+            val displayName = getFileName(uri) ?: tempFile.name
+            read(tempFile, uri)?.copy(
+                filePath = getStableFilePath(uri),
+                displayName = displayName
+            )
+        } finally {
+            if (!tempFile.delete()) {
+                Log.w(TAG, "Failed to delete temp cache file: ${tempFile.absolutePath}")
+            }
+        } ?: return null
 
         // 如果标题和艺术家都为空，尝试从文件名解析
         return if (metadata.title.isEmpty() && metadata.artist.isEmpty()) {
@@ -449,13 +459,13 @@ class TagEditor(private val context: Context) {
             return writeResult
         }
 
-        // 写回原文件
+        // 写回原 URI。content:// 不能当作普通文件路径处理，只能通过 ContentResolver 写入。
         return try {
             val outputStream = context.contentResolver.openOutputStream(uri, "wt")
             if (outputStream == null) {
                 Log.e(TAG, "Failed to open output stream for uri: $uri")
                 tempFile.delete()
-                return WriteResult.Error("无法写入原文件，可能是权限问题")
+                return WriteResult.Error("无法写入原文件：文件提供方不支持写回，请重新通过文件选择器选择或另存为新文件")
             }
 
             outputStream.use { output ->
@@ -471,6 +481,10 @@ class TagEditor(private val context: Context) {
 
             Log.d(TAG, "writeToUri completed successfully")
             WriteResult.Success
+        } catch (e: SecurityException) {
+            Log.e(TAG, "No write permission for uri: $uri", e)
+            tempFile.delete()
+            WriteResult.Error("没有写入权限：该文件来源只授予了读取权限，请在应用内重新选择文件，或保存为新文件")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to write back to uri: ${e.message}", e)
             tempFile.delete()
@@ -485,7 +499,15 @@ class TagEditor(private val context: Context) {
         return try {
             val fileName = getFileName(uri) ?: "temp_audio"
             Log.d(TAG, "copyToCache: fileName=$fileName")
-            val tempFile = File(context.cacheDir, fileName)
+            val extension = fileName.substringAfterLast('.', "")
+                .replace(Regex("[^A-Za-z0-9]"), "")
+            val prefixBase = fileName.substringBeforeLast('.', "audio")
+                .replace(Regex("[^A-Za-z0-9._-]"), "_")
+                .take(40)
+                .ifBlank { "audio" }
+            val prefix = prefixBase.padEnd(3, '_')
+            val suffix = if (extension.isNotBlank()) ".$extension" else ".tmp"
+            val tempFile = File.createTempFile("${prefix}_", suffix, context.cacheDir)
 
             val inputStream = context.contentResolver.openInputStream(uri)
             if (inputStream == null) {
@@ -520,9 +542,16 @@ class TagEditor(private val context: Context) {
     private fun getFileName(uri: Uri): String? {
         return context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-            cursor.moveToFirst()
-            if (nameIndex >= 0) cursor.getString(nameIndex) else null
+            if (cursor.moveToFirst() && nameIndex >= 0) cursor.getString(nameIndex) else null
         }
+    }
+
+    /**
+     * 给列表去重、事件通知使用的稳定标识。能拿到真实路径时使用真实路径，否则使用 Uri。
+     * 注意不要返回 cache 路径，cache 文件是一次性临时副本。
+     */
+    private fun getStableFilePath(uri: Uri): String {
+        return getFilePathFromUri(uri) ?: uri.toString()
     }
 
     /**
