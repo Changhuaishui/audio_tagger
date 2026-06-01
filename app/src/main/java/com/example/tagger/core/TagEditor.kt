@@ -477,7 +477,7 @@ class TagEditor(private val context: Context) {
             tempFile.delete()
 
             // Notify MediaScanner to refresh metadata in the system media library
-            notifyMediaScanner(uri, metadata.filePath)
+            notifyMediaScanner(uri, null)
 
             Log.d(TAG, "writeToUri completed successfully")
             WriteResult.Success
@@ -814,6 +814,13 @@ class TagEditor(private val context: Context) {
             when (uri.scheme) {
                 "file" -> uri.path
                 "content" -> {
+                    if (DocumentsContract.isDocumentUri(context, uri)) {
+                        val documentId = DocumentsContract.getDocumentId(uri)
+                        if (documentId.startsWith("raw:")) {
+                            return documentId.removePrefix("raw:")
+                        }
+                    }
+
                     // 尝试从 MediaStore 或其他内容提供者获取路径
                     context.contentResolver.query(uri, arrayOf("_data"), null, null, null)?.use { cursor ->
                         if (cursor.moveToFirst()) {
@@ -840,6 +847,11 @@ class TagEditor(private val context: Context) {
             val actualPath = filePath ?: getFilePathFromUri(uri)
 
             if (actualPath != null) {
+                if (actualPath.startsWith("content://")) {
+                    Log.w(TAG, "Skipping MediaScanner for content uri path: $actualPath")
+                    return
+                }
+
                 Log.d(TAG, "Notifying MediaScanner for: $actualPath")
                 MediaScannerConnection.scanFile(
                     context,
