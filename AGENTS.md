@@ -127,9 +127,13 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ## 开发规范
 
+### Git 提交规范
+
+- **禁止 AI 署名**：任何由 AI 生成的代码修改，不得在 git 提交信息中添加 `Co-Authored-By` 等 AI 身份标识（如 `Co-Authored-By: Claude <noreply@anthropic.com>`）。提交信息应仅反映实际开发者（用户本人）的署名。
+
 ### 版本号规范（**每次修改代码后必须更新**）
 
-为确保运行时能够识别新 APK，**每次提交代码前必须同时更新以下两个位置的版本标识**：
+为确保运行时能够识别新 APK，**每次提交代码前必须同时更新以下两个位置的版本标识**
 
 1. **`app/src/main/java/com/example/tagger/ui/MainScreen.kt`**
    - 在 `LargeTopAppBar` 的 `title` 中：

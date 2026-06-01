@@ -1,10 +1,12 @@
 package com.example.tagger.core.video
 
 import android.content.Context
+import android.content.ContentValues
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.util.Log
 import androidx.core.net.toUri
@@ -276,39 +278,12 @@ class VideoExtractor(private val context: Context) {
                     if (ReturnCode.isSuccess(returnCode)) {
                         Log.d(TAG, "FFmpeg extraction succeeded")
 
-                        val finalDir = getPublicMusicDirectory()
-                        if (finalDir == null) {
-                            trySend(ExtractionState.Failed("无法访问公共音乐目录，请检查存储权限"))
-                            inputFile.delete()
-                            close()
-                            return@withContext
-                        }
-                        finalDir.mkdirs()
-                        val finalFile = File(finalDir, outputFileName)
-
-                        var targetFile = finalFile
-                        var counter = 1
-                        while (targetFile.exists()) {
-                            val newName = "${baseName}_${counter}.${targetFormat.extension}"
-                            targetFile = File(finalDir, newName)
-                            counter++
-                        }
-
                         try {
-                            outputFile.copyTo(targetFile, overwrite = true)
+                            val result = saveExtractedAudio(outputFile, outputFileName, targetFormat)
                             outputFile.delete()
-
-                            MediaScannerUtil.broadcastScan(context, targetFile)
-                            Log.d(TAG, "File saved to public directory: ${targetFile.absolutePath}")
-
-                            val result = ExtractionResult.Success(
-                                audioUri = targetFile.toUri(),
-                                filePath = targetFile.absolutePath,
-                                displayName = targetFile.name,
-                                fileSize = targetFile.length()
-                            )
                             trySend(ExtractionState.Completed(result))
                         } catch (e: Exception) {
+                            Log.e(TAG, "Failed to save extracted audio", e)
                             trySend(ExtractionState.Failed("保存文件失败: ${e.message}"))
                         }
                     } else if (ReturnCode.isCancel(returnCode)) {
@@ -435,6 +410,8 @@ class VideoExtractor(private val context: Context) {
             val inputStream = context.contentResolver.openInputStream(uri) ?: return null
             val displayName = getDisplayName(uri) ?: "temp"
             val extension = displayName.substringAfterLast(".", "mp4")
+                .replace(Regex("[^A-Za-z0-9]"), "")
+                .ifBlank { "mp4" }
             val tempFile = File(context.cacheDir, "${prefix}_${System.currentTimeMillis()}.$extension")
 
             inputStream.use { input ->
@@ -447,6 +424,93 @@ class VideoExtractor(private val context: Context) {
             Log.e(TAG, "Failed to copy URI to temp", e)
             null
         }
+    }
+
+    private fun saveExtractedAudio(
+        outputFile: File,
+        outputFileName: String,
+        targetFormat: AudioFormat
+    ): ExtractionResult.Success {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            saveExtractedAudioViaMediaStore(outputFile, outputFileName, targetFormat)
+        } else {
+            saveExtractedAudioViaFileSystem(outputFile, outputFileName)
+        }
+    }
+
+    private fun saveExtractedAudioViaMediaStore(
+        outputFile: File,
+        outputFileName: String,
+        targetFormat: AudioFormat
+    ): ExtractionResult.Success {
+        val resolver = context.contentResolver
+        val relativePath = "${Environment.DIRECTORY_MUSIC}/AudioTagger"
+        val values = ContentValues().apply {
+            put(android.provider.MediaStore.Audio.Media.DISPLAY_NAME, outputFileName)
+            put(android.provider.MediaStore.Audio.Media.MIME_TYPE, targetFormat.mimeType)
+            put(android.provider.MediaStore.Audio.Media.RELATIVE_PATH, relativePath)
+            put(android.provider.MediaStore.Audio.Media.IS_PENDING, 1)
+        }
+
+        val uri = resolver.insert(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
+            ?: throw IllegalStateException("无法创建媒体文件")
+
+        try {
+            resolver.openOutputStream(uri, "w")?.use { output ->
+                outputFile.inputStream().use { input ->
+                    input.copyTo(output)
+                }
+            } ?: throw IllegalStateException("无法打开输出流")
+
+            val publishedValues = ContentValues().apply {
+                put(android.provider.MediaStore.Audio.Media.IS_PENDING, 0)
+            }
+            resolver.update(uri, publishedValues, null, null)
+
+            Log.d(TAG, "File saved via MediaStore: $uri")
+            return ExtractionResult.Success(
+                audioUri = uri,
+                filePath = uri.toString(),
+                displayName = outputFileName,
+                fileSize = outputFile.length()
+            )
+        } catch (e: Exception) {
+            try {
+                resolver.delete(uri, null, null)
+            } catch (deleteError: Exception) {
+                Log.w(TAG, "Failed to delete incomplete MediaStore item", deleteError)
+            }
+            throw e
+        }
+    }
+
+    private fun saveExtractedAudioViaFileSystem(
+        outputFile: File,
+        outputFileName: String
+    ): ExtractionResult.Success {
+        val finalDir = getPublicMusicDirectory()
+            ?: throw IllegalStateException("无法访问公共音乐目录，请检查存储权限")
+        finalDir.mkdirs()
+
+        val baseName = outputFileName.substringBeforeLast(".")
+        val extension = outputFileName.substringAfterLast(".", "")
+        var targetFile = File(finalDir, outputFileName)
+        var counter = 1
+        while (targetFile.exists()) {
+            targetFile = File(finalDir, "${baseName}_${counter}.${extension}")
+            counter++
+        }
+
+        outputFile.copyTo(targetFile, overwrite = true)
+        MediaScannerUtil.broadcastScan(context, targetFile)
+        Log.d(TAG, "File saved to public directory: ${targetFile.absolutePath}")
+
+        return ExtractionResult.Success(
+            audioUri = targetFile.toUri(),
+            filePath = targetFile.absolutePath,
+            displayName = targetFile.name,
+            fileSize = targetFile.length()
+        )
     }
 
     private fun getDisplayName(uri: Uri): String? {

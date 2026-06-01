@@ -181,7 +181,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0129e]", // 版本标记 - MediaStore写权限请求
+                            "音乐标签 [v0601a]", // 版本标记 - URI缓存与MediaStore保存修复
                             style = MaterialTheme.typography.displaySmall
                         )
                     },

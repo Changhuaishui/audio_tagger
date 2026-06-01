@@ -33,7 +33,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         // 版本标记 - 用于验证新版本正在运行
-        const val VERSION_TAG = "v0129e_mediastore_write_permission"
+        const val VERSION_TAG = "v0601a_uri_cache_mediastore_save"
         private const val TAG = "MainActivity"
     }
 
@@ -115,7 +115,7 @@ class MainActivity : ComponentActivity() {
         // 版本验证日志
         Log.d(TAG, "========== 版本检查 ==========")
         Log.d(TAG, "当前版本: $VERSION_TAG")
-        Log.d(TAG, "功能: 视频音轨提取")
+        Log.d(TAG, "功能: URI缓存与MediaStore保存修复")
         Log.d(TAG, "===============================")
 
         // 监听 MediaStore 写权限请求

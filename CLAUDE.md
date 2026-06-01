@@ -1,5 +1,9 @@
 # AudioTagger 开发规范
 
+## Git 提交规范
+
+- **禁止 AI 署名**：任何由 AI 生成的代码修改，不得在 git 提交信息中添加 `Co-Authored-By` 等 AI 身份标识（如 `Co-Authored-By: Claude <noreply@anthropic.com>`）。提交信息应仅反映实际开发者（用户本人）的署名。
+
 ## 版本号规范
 
 每次更新代码后，必须更新 UI 显示的版本号，便于识别运行的是新 APK。
