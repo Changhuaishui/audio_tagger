@@ -772,7 +772,7 @@ class TagEditor(private val context: Context) {
                     Log.w(TAG, "Failed to scan old path", e)
                 }
 
-                return RenameResult.Success(Uri.fromFile(newFile))
+                return RenameResult.Success(uri)
             }
 
             // 方式2: 使用 ContentResolver 更新 DISPLAY_NAME（某些系统支持）
