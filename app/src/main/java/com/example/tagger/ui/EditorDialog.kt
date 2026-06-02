@@ -42,7 +42,8 @@ fun EditorDialog(
     onDismiss: () -> Unit,
     onSave: (AudioMetadata) -> Unit,
     onPickCover: (Uri) -> Unit = {},
-    onFixExtension: ((AudioMetadata) -> Unit)? = null  // 修复扩展名回调
+    onFixExtension: ((AudioMetadata) -> Unit)? = null,  // 修复扩展名回调
+    onOpenWithExternalApp: () -> Unit = {}  // 用其他应用打开（如网易云音乐）
 ) {
     // 文件名（不含扩展名）
     val originalNameWithoutExt = remember { metadata.displayName.substringBeforeLast('.', metadata.displayName) }

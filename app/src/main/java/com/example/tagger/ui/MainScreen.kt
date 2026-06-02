@@ -82,6 +82,7 @@ fun MainScreen(
     onRunVideoDiagnostic: () -> Unit = {},
     // 修复扩展名
     onFixExtension: (AudioMetadata) -> Unit = {},
+    onOpenSingleFile: (AudioMetadata) -> Unit = {},
     // 雷达扫描
     onShowRadarScan: () -> Unit = {},
     onStartRadarScan: () -> Unit = {},
@@ -467,7 +468,8 @@ fun MainScreen(
             onDismiss = { onSelectItem(null) },
             onSave = onSaveItem,
             onPickCover = onPickCover,
-            onFixExtension = onFixExtension
+            onFixExtension = onFixExtension,
+            onOpenWithExternalApp = { onOpenSingleFile(item) }
         )
     }
 

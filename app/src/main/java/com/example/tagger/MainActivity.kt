@@ -220,7 +220,8 @@ class MainActivity : ComponentActivity() {
                         onOpenWithExternalApp = {
                             val selectedItems = uiState.audioList.filter { it.uri in uiState.selectedUris }
                             selectedItems.forEach { openWithExternalApp(it.uri) }
-                        }
+                        },
+                        onOpenSingleFile = { openWithExternalApp(it.uri) }
                     )
                 }
             }
@@ -307,17 +308,19 @@ class MainActivity : ComponentActivity() {
 
     private fun openWithExternalApp(uri: Uri) {
         try {
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, contentResolver.getType(uri) ?: "audio/*")
+            // 使用 ACTION_SEND 更适合导入到音乐播放器（网易云音乐会提供"导入云盘"等选项）
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = contentResolver.getType(uri) ?: "audio/*"
+                putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             if (intent.resolveActivity(packageManager) != null) {
-                startActivity(Intent.createChooser(intent, "选择应用打开"))
+                startActivity(Intent.createChooser(intent, "选择音乐播放器打开"))
             } else {
-                Toast.makeText(this, "未找到可打开音频文件的应用，请先安装网易云音乐", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "未找到可处理音频文件的应用，请先安装网易云音乐", Toast.LENGTH_LONG).show()
             }
         } catch (e: android.content.ActivityNotFoundException) {
-            Toast.makeText(this, "未找到可打开音频文件的应用，请先安装网易云音乐", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "未找到可处理音频文件的应用，请先安装网易云音乐", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
             Toast.makeText(this, "无法打开文件: ${e.message}", Toast.LENGTH_SHORT).show()
         }

@@ -379,6 +379,8 @@ class TagEditor(private val context: Context) {
                         tag.setField(artwork)
                     }
                     Log.d(TAG, "Cover art written: ${bytes.size} bytes, isFlac=$isFlac")
+                } catch (e: NoClassDefFoundError) {
+                    Log.e(TAG, "封面写入失败：Android 不支持 javax.imageio.ImageIO，该格式暂无法写入封面")
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to write cover art: ${e.message}")
                 }
