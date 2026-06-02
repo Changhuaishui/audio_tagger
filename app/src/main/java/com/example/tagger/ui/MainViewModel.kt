@@ -2,6 +2,8 @@ package com.example.tagger.ui
 
 import android.app.Application
 import android.content.ContentUris
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.MediaStore
@@ -81,8 +83,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _writePermissionRequest = MutableSharedFlow<WritePermissionRequest>()
     val writePermissionRequest: SharedFlow<WritePermissionRequest> = _writePermissionRequest.asSharedFlow()
 
-    /** 待执行的重命名操作（等待权限授予后重试） */
-    private var pendingRenameAction: PendingRenameAction? = null
+    /** 待执行的写入操作（等待 MediaStore 写权限授予后重试） */
+    private var pendingWriteAction: PendingWriteAction? = null
+    private var pendingSaveItem: AudioMetadata? = null
 
     /**
      * 加载选中的音频文件（自动去重，根据 filePath 检查）
@@ -199,6 +202,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 保存编辑后的元数据（包括文件名变更）
      */
     fun saveItem(item: AudioMetadata) {
+        if (requestWritePermissionIfNeeded(listOf(item.uri), PendingWriteAction.SAVE_ITEM, item)) {
+            return
+        }
+        saveItemAfterPermission(item)
+    }
+
+    private fun saveItemAfterPermission(item: AudioMetadata) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
 
@@ -306,6 +316,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 批量保存所有修改
      */
     fun batchSaveAll() {
+        val items = _uiState.value.audioList
+        if (requestWritePermissionIfNeeded(items.map { it.uri }, PendingWriteAction.BATCH_SAVE_ALL)) {
+            return
+        }
+        batchSaveAllAfterPermission()
+    }
+
+    private fun batchSaveAllAfterPermission() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true)
 
@@ -1308,9 +1326,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 收集选中项中的 MediaStore URI
      */
     private fun collectMediaStoreUris(items: List<AudioMetadata>): List<Uri> {
-        return items.filter { item ->
-            item.uri.authority == "media" || item.uri.toString().contains("media")
-        }.map { it.uri }
+        return items.map { it.uri }.filter { isMediaStoreUri(it) && !hasWritePermission(it) }
+    }
+
+    private fun isMediaStoreUri(uri: Uri): Boolean {
+        return uri.authority == "media" || uri.toString().contains("content://media/")
+    }
+
+    private fun hasWritePermission(uri: Uri): Boolean {
+        val context = getApplication<Application>()
+        return context.checkUriPermission(
+            uri,
+            android.os.Process.myPid(),
+            android.os.Process.myUid(),
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestWritePermissionIfNeeded(
+        uris: List<Uri>,
+        action: PendingWriteAction,
+        item: AudioMetadata? = null
+    ): Boolean {
+        val mediaStoreUris = uris.filter { isMediaStoreUri(it) && !hasWritePermission(it) }
+        if (mediaStoreUris.isEmpty()) return false
+
+        pendingWriteAction = action
+        pendingSaveItem = item
+        viewModelScope.launch {
+            _writePermissionRequest.emit(WritePermissionRequest(mediaStoreUris))
+        }
+        return true
     }
 
     /**
@@ -1328,7 +1374,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         // 保存待执行操作，请求权限
-        pendingRenameAction = action
+        pendingWriteAction = when (action) {
+            PendingRenameAction.OPTIMIZE_FILE_NAMES -> PendingWriteAction.OPTIMIZE_FILE_NAMES
+            PendingRenameAction.EXECUTE_PROCESS_SCHEME -> PendingWriteAction.EXECUTE_PROCESS_SCHEME
+        }
+        pendingSaveItem = null
         viewModelScope.launch {
             _writePermissionRequest.emit(WritePermissionRequest(mediaStoreUris))
         }
@@ -1338,19 +1388,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 写权限授予后调用，执行待处理的重命名操作
      */
     fun onWritePermissionGranted() {
-        val action = pendingRenameAction ?: return
-        pendingRenameAction = null
-        executeRenameAction(action)
+        val action = pendingWriteAction ?: return
+        val item = pendingSaveItem
+        pendingWriteAction = null
+        pendingSaveItem = null
+        when (action) {
+            PendingWriteAction.SAVE_ITEM -> item?.let { saveItemAfterPermission(it) }
+            PendingWriteAction.BATCH_SAVE_ALL -> batchSaveAllAfterPermission()
+            PendingWriteAction.OPTIMIZE_FILE_NAMES -> optimizeSelectedFileNames()
+            PendingWriteAction.EXECUTE_PROCESS_SCHEME -> executeProcessScheme()
+        }
     }
 
     /**
      * 写权限被拒绝
      */
     fun onWritePermissionDenied() {
-        pendingRenameAction = null
+        pendingWriteAction = null
+        pendingSaveItem = null
         _uiState.value = _uiState.value.copy(
             isLoading = false,
-            message = "未获得写权限，无法重命名文件"
+            message = "未获得写权限，无法修改文件"
         )
     }
 
@@ -1380,6 +1438,16 @@ data class WritePermissionRequest(val uris: List<Uri>)
  * 待执行的重命名操作类型
  */
 enum class PendingRenameAction {
+    OPTIMIZE_FILE_NAMES,
+    EXECUTE_PROCESS_SCHEME
+}
+
+/**
+ * 等待 MediaStore 写权限后继续执行的操作
+ */
+private enum class PendingWriteAction {
+    SAVE_ITEM,
+    BATCH_SAVE_ALL,
     OPTIMIZE_FILE_NAMES,
     EXECUTE_PROCESS_SCHEME
 }
