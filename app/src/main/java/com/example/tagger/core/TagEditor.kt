@@ -30,6 +30,7 @@ private const val TAG = "TagEditor"
  */
 sealed class WriteResult {
     object Success : WriteResult()
+    data class PartialSuccess(val message: String) : WriteResult()
     data class Error(val message: String) : WriteResult()
 }
 
@@ -363,6 +364,7 @@ class TagEditor(private val context: Context) {
             if (metadata.comment.isNotEmpty()) tag.setField(FieldKey.COMMENT, metadata.comment)
 
             // 写入封面
+            var coverError: String? = null
             metadata.coverArtBytes?.let { bytes ->
                 try {
                     val isFlac = tag is FlacTag
@@ -380,9 +382,11 @@ class TagEditor(private val context: Context) {
                     }
                     Log.d(TAG, "Cover art written: ${bytes.size} bytes, isFlac=$isFlac")
                 } catch (e: NoClassDefFoundError) {
-                    Log.e(TAG, "封面写入失败：Android 不支持 javax.imageio.ImageIO，该格式暂无法写入封面")
+                    coverError = "该格式暂不支持写入封面"
+                    Log.e(TAG, "封面写入失败：Android 不支持 javax.imageio.ImageIO，$coverError")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to write cover art: ${e.message}")
+                    coverError = e.message ?: "封面写入失败"
+                    Log.e(TAG, "Failed to write cover art: $coverError")
                 }
             }
 
@@ -396,7 +400,11 @@ class TagEditor(private val context: Context) {
                 Log.d(TAG, "Copied back to original file and deleted temp file")
             }
 
-            WriteResult.Success
+            if (coverError != null) {
+                WriteResult.PartialSuccess(coverError)
+            } else {
+                WriteResult.Success
+            }
         } catch (e: org.jaudiotagger.audio.exceptions.InvalidAudioFrameException) {
             Log.e(TAG, "Invalid audio frame: ${e.message}", e)
             WriteResult.Error("文件格式损坏或不支持，无法写入标签")
@@ -482,7 +490,8 @@ class TagEditor(private val context: Context) {
             notifyMediaScanner(uri, null)
 
             Log.d(TAG, "writeToUri completed successfully")
-            WriteResult.Success
+            // 如果标签写入阶段返回了 PartialSuccess（如封面失败），保持传递
+            if (writeResult is WriteResult.PartialSuccess) writeResult else WriteResult.Success
         } catch (e: SecurityException) {
             Log.e(TAG, "No write permission for uri: $uri", e)
             tempFile.delete()

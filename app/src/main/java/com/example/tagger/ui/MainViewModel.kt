@@ -86,6 +86,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** 待执行的写入操作（等待 MediaStore 写权限授予后重试） */
     private var pendingWriteAction: PendingWriteAction? = null
     private var pendingSaveItem: AudioMetadata? = null
+    private var pendingRequestedUris: List<Uri> = emptyList()
+
+    /** 已通过 MediaStore.createWriteRequest() 获得写权限的 URI（内存缓存） */
+    private val grantedMediaStoreUris = mutableSetOf<Uri>()
 
     /**
      * 加载选中的音频文件（自动去重，根据 filePath 检查）
@@ -271,6 +275,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // 发送事件通知文件已保存
                     emitAudioSaved(currentItem)
                 }
+                is WriteResult.PartialSuccess -> {
+                    // 标签已保存，但封面失败
+                    val updatedList = _uiState.value.audioList.map {
+                        if (it.uri == item.uri) currentItem else it
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        audioList = updatedList,
+                        selectedItem = null,
+                        isLoading = false,
+                        message = "标签已保存，但封面未能写入：${result.message}"
+                    )
+                    emitAudioSaved(currentItem)
+                }
                 is WriteResult.Error -> {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
@@ -328,20 +345,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(isLoading = true)
 
             val successItems = mutableListOf<AudioMetadata>()
+            val partialItems = mutableListOf<Pair<AudioMetadata, String>>()  // 封面失败的项
             var failCount = 0
             withContext(Dispatchers.IO) {
                 _uiState.value.audioList.forEach { item ->
-                    when (tagEditor.writeToUri(item.uri, item)) {
+                    when (val result = tagEditor.writeToUri(item.uri, item)) {
                         is WriteResult.Success -> successItems.add(item)
+                        is WriteResult.PartialSuccess -> {
+                            successItems.add(item)
+                            partialItems.add(item to result.message)
+                        }
                         is WriteResult.Error -> failCount++
                     }
                 }
             }
 
-            val message = if (failCount == 0) {
-                "已保存 ${successItems.size} 个文件"
-            } else {
-                "保存完成: ${successItems.size} 成功, $failCount 失败（部分文件格式不支持）"
+            val message = buildString {
+                if (successItems.isNotEmpty()) {
+                    append("已保存 ${successItems.size} 个文件")
+                }
+                if (partialItems.isNotEmpty()) {
+                    append("，其中 ${partialItems.size} 个封面未能写入")
+                }
+                if (failCount > 0) {
+                    if (isNotEmpty()) append("；")
+                    append("$failCount 个失败")
+                }
             }
 
             _uiState.value = _uiState.value.copy(
@@ -1334,6 +1363,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun hasWritePermission(uri: Uri): Boolean {
+        if (uri in grantedMediaStoreUris) return true
         val context = getApplication<Application>()
         return context.checkUriPermission(
             uri,
@@ -1353,6 +1383,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         pendingWriteAction = action
         pendingSaveItem = item
+        pendingRequestedUris = mediaStoreUris
         viewModelScope.launch {
             _writePermissionRequest.emit(WritePermissionRequest(mediaStoreUris))
         }
@@ -1390,8 +1421,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onWritePermissionGranted() {
         val action = pendingWriteAction ?: return
         val item = pendingSaveItem
+        // 缓存已授权的 MediaStore URI，避免重复弹框
+        grantedMediaStoreUris.addAll(pendingRequestedUris)
         pendingWriteAction = null
         pendingSaveItem = null
+        pendingRequestedUris = emptyList()
         when (action) {
             PendingWriteAction.SAVE_ITEM -> item?.let { saveItemAfterPermission(it) }
             PendingWriteAction.BATCH_SAVE_ALL -> batchSaveAllAfterPermission()
@@ -1406,6 +1440,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onWritePermissionDenied() {
         pendingWriteAction = null
         pendingSaveItem = null
+        pendingRequestedUris = emptyList()
         _uiState.value = _uiState.value.copy(
             isLoading = false,
             message = "未获得写权限，无法修改文件"
