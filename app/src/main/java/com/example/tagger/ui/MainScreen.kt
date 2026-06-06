@@ -182,7 +182,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0602b]", // 版本标记 - 雷达重命名后保留MediaStore URI
+                            "音乐标签 [v0602c]", // 版本标记 - 修复M4A标签保存时mp4parser初始化失败
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
