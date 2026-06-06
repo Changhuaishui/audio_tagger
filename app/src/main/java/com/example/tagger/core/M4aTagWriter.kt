@@ -288,20 +288,29 @@ object M4aTagWriter {
     }
 
     /**
-     * Set cover art
-     * Note: Cover art writing for M4A is complex and may not work with all files.
-     * This implementation uses the AppleCoverBox structure.
+     * Set cover art for M4A file.
+     * Uses AppleCoverBox with setJpg()/setPng() API.
      */
     private fun setCoverArt(ilst: AppleItemListBox, imageData: ByteArray) {
-        // Cover art writing in mp4parser is complex and requires proper data box structure
-        // For now, log that cover art is not supported and skip
-        // TODO: Implement proper cover art writing if needed
-        Log.w(TAG, "Cover art writing for M4A not yet implemented (${imageData.size} bytes skipped)")
+        try {
+            // Remove existing cover art
+            val existing = ilst.boxes.firstOrNull { it.type == "covr" }
+            if (existing != null) {
+                ilst.boxes.remove(existing)
+            }
 
-        // The proper implementation would need to:
-        // 1. Create AppleCoverBox
-        // 2. Create proper inner data structure with image bytes and type flag
-        // This requires understanding the exact byte structure expected by mp4parser
+            val coverBox = AppleCoverBox()
+            if (isPng(imageData)) {
+                coverBox.setPng(imageData)
+                Log.d(TAG, "Set PNG cover art: ${imageData.size} bytes")
+            } else {
+                coverBox.setJpg(imageData)
+                Log.d(TAG, "Set JPEG cover art: ${imageData.size} bytes")
+            }
+            ilst.addBox(coverBox)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set cover art", e)
+        }
     }
 
     /**
