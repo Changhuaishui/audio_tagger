@@ -14,6 +14,16 @@ private const val TAG = "JAudioTagWriter"
 abstract class JAudioTagWriter : AudioTagWriter {
 
     override fun write(file: File, metadata: AudioMetadata, actualFormat: String?): WriteResult {
+        return withWriteOptions {
+            writeWithCurrentOptions(file, metadata, actualFormat)
+        }
+    }
+
+    private fun writeWithCurrentOptions(
+        file: File,
+        metadata: AudioMetadata,
+        actualFormat: String?
+    ): WriteResult {
         return try {
             Log.d(TAG, "Writing tags with JAudioTagger: ${file.absolutePath}")
 
@@ -99,6 +109,8 @@ abstract class JAudioTagWriter : AudioTagWriter {
     }
 
     protected open fun beforeCommit(tag: Tag) = Unit
+
+    protected open fun <T> withWriteOptions(block: () -> T): T = block()
 
     private fun isFormatMatch(extension: String, actualFormat: String): Boolean {
         return when (actualFormat) {

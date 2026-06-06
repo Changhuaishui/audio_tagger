@@ -54,8 +54,41 @@ class TagEditor(private val context: Context) {
      */
     fun read(file: File, uri: Uri): AudioMetadata? {
         // 先尝试 MediaMetadataRetriever（Android 原生，更可靠）
-        return readWithMediaMetadataRetriever(file, uri)
-            ?: readWithJAudioTagger(file, uri)  // fallback 到 JAudioTagger
+        val metadata = readWithMediaMetadataRetriever(file, uri)
+            ?: return readWithJAudioTagger(file, uri)  // fallback 到 JAudioTagger
+
+        // Android 原生 MediaMetadataRetriever 对 WAV 的 INFO/ID3 标签支持不稳定。
+        // WAV 写入时以 ID3 为准，读取时也用 JAudioTagger 补全文字标签和封面。
+        return if (metadata.format == "WAV") {
+            enrichWavMetadataFromJAudioTagger(file, uri, metadata)
+        } else {
+            metadata
+        }
+    }
+
+    private fun enrichWavMetadataFromJAudioTagger(
+        file: File,
+        uri: Uri,
+        metadata: AudioMetadata
+    ): AudioMetadata {
+        val fallback = readWithJAudioTagger(file, uri)
+        return if (fallback != null) {
+            Log.d(TAG, "WAV metadata loaded with JAudioTagger fallback: hasCover=${fallback.coverArtBytes != null}")
+            metadata.copy(
+                title = fallback.title,
+                artist = fallback.artist,
+                album = fallback.album,
+                year = fallback.year,
+                track = fallback.track,
+                genre = fallback.genre,
+                comment = fallback.comment,
+                coverArt = fallback.coverArt,
+                coverArtBytes = fallback.coverArtBytes,
+                coverArtMimeType = fallback.coverArtMimeType
+            )
+        } else {
+            metadata
+        }
     }
 
     /**
