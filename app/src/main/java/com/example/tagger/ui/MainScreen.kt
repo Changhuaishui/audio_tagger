@@ -182,7 +182,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0606d]", // 版本标记 - 修复WAV文字标签读取fallback
+                            "音乐标签 [v0606e]", // 版本标记 - 修复OGG封面写入
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
