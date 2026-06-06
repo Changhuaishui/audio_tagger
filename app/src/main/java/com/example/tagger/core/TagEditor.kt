@@ -9,15 +9,15 @@ import android.media.MediaMetadataRetriever
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.provider.DocumentsContract
+import com.example.tagger.core.tagwriter.FlacTagWriter
+import com.example.tagger.core.tagwriter.M4aAudioTagWriter
+import com.example.tagger.core.tagwriter.Mp3TagWriter
+import com.example.tagger.core.tagwriter.OggTagWriter
+import com.example.tagger.core.tagwriter.WavTagWriter
 import com.example.tagger.model.AudioMetadata
 import com.example.tagger.ui.RenameResult
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
-import org.jaudiotagger.tag.images.ArtworkFactory
-import org.jaudiotagger.tag.flac.FlacTag
-import org.jaudiotagger.tag.wav.WavTag
-import org.jaudiotagger.audio.wav.WavOptions
-import org.jaudiotagger.audio.flac.metadatablock.MetadataBlockDataPicture
 import java.io.File
 import java.io.FileOutputStream
 import android.util.Log
@@ -37,6 +37,12 @@ sealed class WriteResult {
 }
 
 class TagEditor(private val context: Context) {
+
+    private val m4aWriter = M4aAudioTagWriter()
+    private val mp3Writer = Mp3TagWriter()
+    private val flacWriter = FlacTagWriter()
+    private val wavWriter = WavTagWriter()
+    private val oggWriter = OggTagWriter()
 
     init {
         // 禁用 JAudioTagger 的日志
@@ -200,34 +206,6 @@ class TagEditor(private val context: Context) {
     }
 
     /**
-     * 检查文件扩展名与实际格式是否匹配
-     */
-    private fun isFormatMatch(extension: String, actualFormat: String): Boolean {
-        return when (actualFormat) {
-            "MP3" -> extension in listOf("MP3")
-            "FLAC" -> extension in listOf("FLAC")
-            "M4A" -> extension in listOf("M4A", "MP4", "AAC")
-            "OGG" -> extension in listOf("OGG", "OGA")
-            "WAV" -> extension in listOf("WAV")
-            else -> true  // 未知格式不做限制
-        }
-    }
-
-    /**
-     * 根据格式获取正确的扩展名
-     */
-    private fun getExtensionForFormat(format: String): String {
-        return when (format) {
-            "MP3" -> "mp3"
-            "FLAC" -> "flac"
-            "M4A" -> "m4a"
-            "OGG" -> "ogg"
-            "WAV" -> "wav"
-            else -> "tmp"
-        }
-    }
-
-    /**
      * 检测文件的实际格式（通过 MediaMetadataRetriever）
      */
     private fun detectActualFormat(file: File): String? {
@@ -275,10 +253,10 @@ class TagEditor(private val context: Context) {
             "M4A" -> {
                 // 双重验证：确保文件确实是有效的 M4A 容器
                 if (M4aTagWriter.isValidM4aFile(file)) {
-                    writeWithM4aTagWriter(file, metadata)
+                    m4aWriter.write(file, metadata, actualFormat)
                 } else {
                     Log.w(TAG, "File detected as M4A but is not a valid M4A container, trying JAudioTagger")
-                    writeWithJAudioTagger(file, metadata, actualFormat)
+                    mp3Writer.write(file, metadata, actualFormat)
                 }
             }
 
@@ -286,183 +264,18 @@ class TagEditor(private val context: Context) {
             "AAC" -> {
                 if (M4aTagWriter.isValidM4aFile(file)) {
                     // 实际上是 M4A 容器中的 AAC
-                    writeWithM4aTagWriter(file, metadata)
+                    m4aWriter.write(file, metadata, actualFormat)
                 } else {
                     Log.w(TAG, "Raw AAC file detected, metadata not supported")
                     WriteResult.Error("AAC 裸流文件不支持元数据。建议转换为 M4A 或 MP3 格式后再编辑标签。")
                 }
             }
 
-            // 其他格式（MP3, FLAC, OGG, WAV）：使用 JAudioTagger
-            else -> {
-                writeWithJAudioTagger(file, metadata, actualFormat)
-            }
+            "FLAC" -> flacWriter.write(file, metadata, actualFormat)
+            "WAV" -> wavWriter.write(file, metadata, actualFormat)
+            "OGG" -> oggWriter.write(file, metadata, actualFormat)
+            else -> mp3Writer.write(file, metadata, actualFormat)
         }
-    }
-
-    /**
-     * 使用 M4aTagWriter (mp4parser) 写入 M4A 文件
-     */
-    private fun writeWithM4aTagWriter(file: File, metadata: AudioMetadata): WriteResult {
-        Log.d(TAG, "Writing M4A tags with mp4parser: ${file.absolutePath}")
-
-        // 检查是否为有效的 M4A 容器（而非裸 AAC）
-        if (!M4aTagWriter.isValidM4aFile(file)) {
-            return WriteResult.Error("不是有效的 M4A 文件。可能是 AAC 裸流，不支持元数据。")
-        }
-
-        val m4aMetadata = M4aTagWriter.M4aMetadata(
-            title = metadata.title.ifEmpty { null },
-            artist = metadata.artist.ifEmpty { null },
-            album = metadata.album.ifEmpty { null },
-            year = metadata.year.ifEmpty { null },
-            genre = metadata.genre.ifEmpty { null },
-            comment = metadata.comment.ifEmpty { null },
-            coverArt = metadata.coverArtBytes
-        )
-
-        return when (val result = M4aTagWriter.writeMetadata(file, m4aMetadata)) {
-            is M4aTagWriter.Result.Success -> {
-                Log.d(TAG, "M4A tags written successfully")
-                WriteResult.Success
-            }
-            is M4aTagWriter.Result.Error -> {
-                Log.e(TAG, "M4A tag write failed: ${result.message}")
-                WriteResult.Error(result.message)
-            }
-        }
-    }
-
-    /**
-     * 使用 JAudioTagger 写入 (MP3, FLAC, OGG, WAV 等格式)
-     */
-    private fun writeWithJAudioTagger(file: File, metadata: AudioMetadata, actualFormat: String?): WriteResult {
-        return try {
-            Log.d(TAG, "Writing tags with JAudioTagger: ${file.absolutePath}")
-
-            val extension = file.extension.uppercase()
-
-            // 如果格式不匹配，使用临时文件（正确扩展名）来写入
-            val workFile = if (actualFormat != null && !isFormatMatch(extension, actualFormat)) {
-                Log.w(TAG, "Format mismatch: extension=$extension, actual=$actualFormat. Using temp file with correct extension.")
-                val correctExt = getExtensionForFormat(actualFormat)
-                val tempFile = File(file.parent, "${file.nameWithoutExtension}.$correctExt")
-                file.copyTo(tempFile, overwrite = true)
-                tempFile
-            } else {
-                file
-            }
-
-            val audio = AudioFileIO.read(workFile)
-            val tag = audio.tagOrCreateAndSetDefault
-
-            // 无论是否为空都设置字段（允许清空）
-            tag.setField(FieldKey.TITLE, metadata.title)
-            tag.setField(FieldKey.ARTIST, metadata.artist)
-            tag.setField(FieldKey.ALBUM, metadata.album)
-            if (metadata.year.isNotEmpty()) tag.setField(FieldKey.YEAR, metadata.year)
-            if (metadata.track.isNotEmpty()) tag.setField(FieldKey.TRACK, metadata.track)
-            if (metadata.genre.isNotEmpty()) tag.setField(FieldKey.GENRE, metadata.genre)
-            if (metadata.comment.isNotEmpty()) tag.setField(FieldKey.COMMENT, metadata.comment)
-
-            // 写入封面
-            var coverError: String? = null
-            metadata.coverArtBytes?.let { bytes ->
-                try {
-                    val isFlac = tag is FlacTag
-                    val isWav = tag is WavTag
-                    if (isFlac) {
-                        // FLAC 文件：直接使用 MetadataBlockDataPicture 避免 ImageIO 调用
-                        writeFlacCover(tag as FlacTag, bytes, metadata.coverArtMimeType ?: "image/jpeg")
-                    } else if (isWav) {
-                        // WAV 文件：直接操作 ID3 tag，绕过 WavInfoTag 的 UnsupportedOperationException
-                        val wavTag = tag as WavTag
-                        val id3Tag = wavTag.iD3Tag ?: WavTag.createDefaultID3Tag()
-                        id3Tag.deleteArtworkField()
-                        val artwork = ArtworkFactory.getNew()
-                        artwork.binaryData = bytes
-                        artwork.mimeType = metadata.coverArtMimeType ?: "image/jpeg"
-                        artwork.pictureType = 3  // Front Cover
-                        id3Tag.setField(artwork)
-                        wavTag.setID3Tag(id3Tag)
-                        Log.d(TAG, "WAV cover art written to ID3 tag: ${bytes.size} bytes")
-                    } else {
-                        // 其他格式：使用标准方式
-                        tag.deleteArtworkField()
-                        val artwork = ArtworkFactory.getNew()
-                        artwork.binaryData = bytes
-                        artwork.mimeType = metadata.coverArtMimeType ?: "image/jpeg"
-                        artwork.pictureType = 3  // Front Cover
-                        tag.setField(artwork)
-                    }
-                    Log.d(TAG, "Cover art written: ${bytes.size} bytes, isFlac=$isFlac, isWav=$isWav")
-                } catch (e: NoClassDefFoundError) {
-                    coverError = "该格式暂不支持写入封面"
-                    Log.e(TAG, "封面写入失败：Android 不支持 javax.imageio.ImageIO，$coverError")
-                } catch (e: Exception) {
-                    coverError = e.message ?: "封面写入失败"
-                    Log.e(TAG, "Failed to write cover art: $coverError")
-                }
-            }
-
-            audio.commit()
-            Log.d(TAG, "Tags written successfully to: ${workFile.absolutePath}")
-
-            // 如果使用了临时文件，将内容复制回原文件
-            if (workFile != file) {
-                workFile.copyTo(file, overwrite = true)
-                workFile.delete()
-                Log.d(TAG, "Copied back to original file and deleted temp file")
-            }
-
-            if (coverError != null) {
-                WriteResult.PartialSuccess(coverError)
-            } else {
-                WriteResult.Success
-            }
-        } catch (e: org.jaudiotagger.audio.exceptions.InvalidAudioFrameException) {
-            Log.e(TAG, "Invalid audio frame: ${e.message}", e)
-            WriteResult.Error("文件格式损坏或不支持，无法写入标签")
-        } catch (e: org.jaudiotagger.audio.exceptions.CannotReadException) {
-            Log.e(TAG, "Cannot read audio: ${e.message}", e)
-            WriteResult.Error("无法读取音频文件")
-        } catch (e: org.jaudiotagger.audio.exceptions.CannotWriteException) {
-            Log.e(TAG, "Cannot write audio: ${e.message}", e)
-            WriteResult.Error("无法写入音频文件，可能是权限问题")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to write tags: ${e.message}", e)
-            WriteResult.Error("保存失败: ${e.message ?: "未知错误"}")
-        }
-    }
-
-    /**
-     * 为 FLAC 文件写入封面，直接使用 MetadataBlockDataPicture 避免 ImageIO 调用
-     */
-    private fun writeFlacCover(flacTag: FlacTag, imageData: ByteArray, mimeType: String) {
-        // 删除现有封面
-        flacTag.deleteArtworkField()
-
-        // 解析图片尺寸
-        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(imageData, 0, imageData.size, options)
-        val width = options.outWidth
-        val height = options.outHeight
-
-        // 创建 FLAC Picture block
-        // pictureType 3 = Front Cover
-        val picture = MetadataBlockDataPicture(
-            imageData,
-            3,  // pictureType: Front Cover
-            mimeType,
-            "",  // description
-            width,
-            height,
-            0,  // colourDepth (0 = unknown)
-            0   // indexedColourCount (0 for non-indexed)
-        )
-
-        flacTag.setField(picture)
-        Log.d(TAG, "FLAC cover written: ${imageData.size} bytes, ${width}x${height}, $mimeType")
     }
 
     /**
