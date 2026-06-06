@@ -4,12 +4,14 @@ import android.util.Log
 import org.mp4parser.Box
 import org.mp4parser.Container
 import org.mp4parser.IsoFile
+import org.mp4parser.PropertyBoxParserImpl
 import org.mp4parser.boxes.apple.*
 import org.mp4parser.boxes.iso14496.part12.*
 import org.mp4parser.tools.Path
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.RandomAccessFile
+import java.util.Properties
 import java.nio.ByteBuffer
 import java.nio.channels.Channels
 import java.nio.channels.FileChannel
@@ -321,7 +323,32 @@ object M4aTagWriter {
      * to class mappings that are loaded via getResourceAsStream().
      */
     private fun createIsoFile(file: File): IsoFile {
-        return IsoFile(file.absolutePath)
+        val properties = loadIsoParserProperties()
+        val boxParser = PropertyBoxParserImpl(properties)
+        val randomAccessFile = RandomAccessFile(file.absolutePath, "r")
+        return IsoFile(randomAccessFile.channel, boxParser)
+    }
+
+    /**
+     * 加载 mp4parser 的 properties 映射文件。
+     * Android 上 ClassLoader.getSystemResourceAsStream() 返回 null，
+     * 需要尝试多个 ClassLoader 来找到 APK 内打包的 properties。
+     */
+    private fun loadIsoParserProperties(): Properties {
+        val properties = Properties()
+        val loaders = listOf(
+            Thread.currentThread().contextClassLoader,
+            M4aTagWriter::class.java.classLoader,
+            ClassLoader.getSystemClassLoader()
+        )
+        for (loader in loaders) {
+            loader?.getResourceAsStream("isoparser-default.properties")?.use { stream ->
+                properties.load(stream)
+                Log.d(TAG, "Loaded isoparser-default.properties from ${loader::class.java.simpleName}")
+                return properties
+            }
+        }
+        throw IllegalStateException("isoparser-default.properties not found in classpath")
     }
 
     /**
