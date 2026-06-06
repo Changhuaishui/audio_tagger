@@ -33,7 +33,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         // 版本标记 - 用于验证新版本正在运行
-        const val VERSION_TAG = "v0602c_m4a_parser_resource"
+        const val VERSION_TAG = "v0606d_wav_metadata_read_fallback"
         private const val TAG = "MainActivity"
     }
 

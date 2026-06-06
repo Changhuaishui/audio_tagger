@@ -182,7 +182,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0602c]", // 版本标记 - 修复M4A标签保存时mp4parser初始化失败
+                            "音乐标签 [v0606d]", // 版本标记 - 修复WAV文字标签读取fallback
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
