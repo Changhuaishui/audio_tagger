@@ -182,7 +182,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0606e]", // 版本标记 - 修复OGG封面写入
+                            "音乐标签 [v0606f]", // 版本标记 - tagreader架构拆分Phase1
                             style = MaterialTheme.typography.displaySmall
                         )
                     },

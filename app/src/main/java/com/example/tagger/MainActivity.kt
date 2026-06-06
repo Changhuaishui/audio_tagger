@@ -33,7 +33,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         // 版本标记 - 用于验证新版本正在运行
-        const val VERSION_TAG = "v0606e_ogg_cover_picture_block"
+        const val VERSION_TAG = "v0606f_tagreader_phase1"
         private const val TAG = "MainActivity"
     }
 

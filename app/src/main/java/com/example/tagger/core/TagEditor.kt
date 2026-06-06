@@ -5,10 +5,16 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.media.MediaMetadataRetriever
 import android.media.MediaScannerConnection
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.util.Log
+import com.example.tagger.core.tagreader.FlacTagReader
+import com.example.tagger.core.tagreader.JAudioTagReader
+import com.example.tagger.core.tagreader.M4aTagReader
+import com.example.tagger.core.tagreader.Mp3TagReader
+import com.example.tagger.core.tagreader.OggTagReader
+import com.example.tagger.core.tagreader.WavTagReader
 import com.example.tagger.core.tagwriter.FlacTagWriter
 import com.example.tagger.core.tagwriter.M4aAudioTagWriter
 import com.example.tagger.core.tagwriter.Mp3TagWriter
@@ -16,12 +22,8 @@ import com.example.tagger.core.tagwriter.OggTagWriter
 import com.example.tagger.core.tagwriter.WavTagWriter
 import com.example.tagger.model.AudioMetadata
 import com.example.tagger.ui.RenameResult
-import org.jaudiotagger.audio.AudioFileIO
-import org.jaudiotagger.tag.FieldKey
 import java.io.File
 import java.io.FileOutputStream
-import android.util.Log
-import java.io.ByteArrayOutputStream
 import java.util.logging.Level
 import java.util.logging.Logger
 
@@ -44,160 +46,38 @@ class TagEditor(private val context: Context) {
     private val wavWriter = WavTagWriter()
     private val oggWriter = OggTagWriter()
 
+    // 格式专用 Reader
+    private val mp3Reader = Mp3TagReader()
+    private val flacReader = FlacTagReader()
+    private val m4aReader = M4aTagReader()
+    private val wavReader = WavTagReader()
+    private val oggReader = OggTagReader()
+    private val fallbackReader = JAudioTagReader()
+
     init {
         // 禁用 JAudioTagger 的日志
         Logger.getLogger("org.jaudiotagger").level = Level.OFF
     }
 
     /**
-     * 从文件读取音频元数据 - 优先使用 MediaMetadataRetriever（更可靠）
+     * 从文件读取音频元数据
+     * 根据检测到的格式分发给对应的 Reader
      */
     fun read(file: File, uri: Uri): AudioMetadata? {
-        // 先尝试 MediaMetadataRetriever（Android 原生，更可靠）
-        val metadata = readWithMediaMetadataRetriever(file, uri)
-            ?: return readWithJAudioTagger(file, uri)  // fallback 到 JAudioTagger
-
-        // Android 原生 MediaMetadataRetriever 对 WAV/OGG 的标签和封面支持不稳定。
-        // 这些格式写入时以 JAudioTagger 的格式专用标签为准，读取时也用它补全。
-        return if (metadata.format == "WAV" || metadata.format == "OGG") {
-            enrichMetadataFromJAudioTagger(file, uri, metadata)
-        } else {
-            metadata
-        }
-    }
-
-    private fun enrichMetadataFromJAudioTagger(
-        file: File,
-        uri: Uri,
-        metadata: AudioMetadata
-    ): AudioMetadata {
-        val fallback = readWithJAudioTagger(file, uri)
-        return if (fallback != null) {
-            Log.d(TAG, "${metadata.format} metadata loaded with JAudioTagger fallback: hasCover=${fallback.coverArtBytes != null}")
-            metadata.copy(
-                title = fallback.title,
-                artist = fallback.artist,
-                album = fallback.album,
-                year = fallback.year,
-                track = fallback.track,
-                genre = fallback.genre,
-                comment = fallback.comment,
-                coverArt = fallback.coverArt,
-                coverArtBytes = fallback.coverArtBytes,
-                coverArtMimeType = fallback.coverArtMimeType
-            )
-        } else {
-            metadata
-        }
+        val format = detectActualFormat(file) ?: file.extension.uppercase()
+        return readerFor(format).read(file, uri)
     }
 
     /**
-     * 使用 Android 原生 MediaMetadataRetriever 读取（处理大文件更可靠）
+     * Reader 分发
      */
-    private fun readWithMediaMetadataRetriever(file: File, uri: Uri): AudioMetadata? {
-        return try {
-            Log.d(TAG, "Reading with MediaMetadataRetriever: ${file.absolutePath}")
-            val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(file.absolutePath)
-
-            val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: ""
-            val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: ""
-            val album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: ""
-            val year = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR) ?: ""
-            val track = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER) ?: ""
-            val genre = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE) ?: ""
-            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-            val bitrate = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull() ?: 0
-            val mimeType = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE) ?: ""
-
-            // 读取封面
-            val coverBytes = retriever.embeddedPicture
-            val coverBitmap = coverBytes?.let { bytes ->
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            }
-
-            retriever.release()
-
-            val format = when {
-                mimeType.contains("mp3", ignoreCase = true) || mimeType.contains("mpeg", ignoreCase = true) -> "MP3"
-                mimeType.contains("flac", ignoreCase = true) -> "FLAC"
-                mimeType.contains("mp4", ignoreCase = true) || mimeType.contains("m4a", ignoreCase = true) -> "M4A"
-                mimeType.contains("ogg", ignoreCase = true) -> "OGG"
-                mimeType.contains("wav", ignoreCase = true) -> "WAV"
-                mimeType.contains("aac", ignoreCase = true) -> "AAC"
-                else -> file.extension.uppercase().ifEmpty { "Unknown" }
-            }
-
-            Log.d(TAG, "MediaMetadataRetriever succeeded: format=$format, duration=${durationMs/1000}s, hasCover=${coverBytes != null}")
-
-            AudioMetadata(
-                uri = uri,
-                filePath = file.absolutePath,
-                displayName = file.name,
-                format = format,
-                title = title,
-                artist = artist,
-                album = album,
-                year = year,
-                track = track,
-                genre = genre,
-                comment = "",  // MediaMetadataRetriever 不支持 comment
-                duration = durationMs / 1000,
-                bitrate = bitrate / 1000,  // 转换为 kbps
-                sampleRate = 0,  // MediaMetadataRetriever 不直接提供采样率
-                coverArt = coverBitmap,
-                coverArtBytes = coverBytes,
-                coverArtMimeType = "image/jpeg"  // MediaMetadataRetriever 不提供具体类型
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "MediaMetadataRetriever failed: ${e.message}")
-            null
-        }
-    }
-
-    /**
-     * 使用 JAudioTagger 读取（作为 fallback）
-     */
-    private fun readWithJAudioTagger(file: File, uri: Uri): AudioMetadata? {
-        return try {
-            Log.d(TAG, "Reading with JAudioTagger: ${file.absolutePath}")
-            val audio = AudioFileIO.read(file)
-            val tag = audio.tag
-            val header = audio.audioHeader
-
-            // 读取封面
-            val artwork = tag?.firstArtwork
-            val coverBytes = artwork?.binaryData
-            val coverBitmap = coverBytes?.let { bytes ->
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            }
-            val coverMimeType = artwork?.mimeType ?: "image/jpeg"
-
-            Log.d(TAG, "JAudioTagger succeeded: format=${header.format}, hasCover=${coverBytes != null}")
-
-            AudioMetadata(
-                uri = uri,
-                filePath = file.absolutePath,
-                displayName = file.name,
-                format = header.format ?: "Unknown",
-                title = tag?.getFirst(FieldKey.TITLE) ?: "",
-                artist = tag?.getFirst(FieldKey.ARTIST) ?: "",
-                album = tag?.getFirst(FieldKey.ALBUM) ?: "",
-                year = tag?.getFirst(FieldKey.YEAR) ?: "",
-                track = tag?.getFirst(FieldKey.TRACK) ?: "",
-                genre = tag?.getFirst(FieldKey.GENRE) ?: "",
-                comment = tag?.getFirst(FieldKey.COMMENT) ?: "",
-                duration = header.trackLength.toLong(),
-                bitrate = header.bitRateAsNumber.toInt(),
-                sampleRate = header.sampleRateAsNumber,
-                coverArt = coverBitmap,
-                coverArtBytes = coverBytes,
-                coverArtMimeType = coverMimeType
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "JAudioTagger failed: ${file.absolutePath}", e)
-            null
-        }
+    private fun readerFor(format: String) = when (format.uppercase()) {
+        "MP3", "MPEG" -> mp3Reader
+        "FLAC" -> flacReader
+        "M4A", "AAC", "ALAC", "MP4" -> m4aReader
+        "WAV", "WAVE", "PCM" -> wavReader
+        "OGG", "VORBIS", "OPUS" -> oggReader
+        else -> fallbackReader
     }
 
     /**
@@ -243,9 +123,9 @@ class TagEditor(private val context: Context) {
      */
     private fun detectActualFormat(file: File): String? {
         return try {
-            val retriever = MediaMetadataRetriever()
+            val retriever = android.media.MediaMetadataRetriever()
             retriever.setDataSource(file.absolutePath)
-            val mimeType = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE) ?: ""
+            val mimeType = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_MIMETYPE) ?: ""
             retriever.release()
 
             when {
@@ -455,7 +335,7 @@ class TagEditor(private val context: Context) {
 
     /**
      * 从图片 Uri 加载封面数据
-     * @return Pair<Bitmap, ByteArray>? 封面图片和原始字节数据
+     * @return Triple<Bitmap, ByteArray, String>? 封面图片和原始字节数据
      */
     fun loadCoverFromUri(imageUri: Uri): Triple<Bitmap, ByteArray, String>? {
         return try {
@@ -481,7 +361,7 @@ class TagEditor(private val context: Context) {
      * 将 Bitmap 转换为 ByteArray（用于保存用户选择的图片）
      */
     fun bitmapToBytes(bitmap: Bitmap, quality: Int = 90): ByteArray {
-        val stream = ByteArrayOutputStream()
+        val stream = java.io.ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)
         return stream.toByteArray()
     }
