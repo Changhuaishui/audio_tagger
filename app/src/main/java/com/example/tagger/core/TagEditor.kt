@@ -15,6 +15,8 @@ import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
 import org.jaudiotagger.tag.images.ArtworkFactory
 import org.jaudiotagger.tag.flac.FlacTag
+import org.jaudiotagger.tag.wav.WavTag
+import org.jaudiotagger.audio.wav.WavOptions
 import org.jaudiotagger.audio.flac.metadatablock.MetadataBlockDataPicture
 import java.io.File
 import java.io.FileOutputStream
@@ -368,9 +370,22 @@ class TagEditor(private val context: Context) {
             metadata.coverArtBytes?.let { bytes ->
                 try {
                     val isFlac = tag is FlacTag
+                    val isWav = tag is WavTag
                     if (isFlac) {
                         // FLAC 文件：直接使用 MetadataBlockDataPicture 避免 ImageIO 调用
                         writeFlacCover(tag as FlacTag, bytes, metadata.coverArtMimeType ?: "image/jpeg")
+                    } else if (isWav) {
+                        // WAV 文件：直接操作 ID3 tag，绕过 WavInfoTag 的 UnsupportedOperationException
+                        val wavTag = tag as WavTag
+                        val id3Tag = wavTag.iD3Tag ?: WavTag.createDefaultID3Tag()
+                        id3Tag.deleteArtworkField()
+                        val artwork = ArtworkFactory.getNew()
+                        artwork.binaryData = bytes
+                        artwork.mimeType = metadata.coverArtMimeType ?: "image/jpeg"
+                        artwork.pictureType = 3  // Front Cover
+                        id3Tag.setField(artwork)
+                        wavTag.setID3Tag(id3Tag)
+                        Log.d(TAG, "WAV cover art written to ID3 tag: ${bytes.size} bytes")
                     } else {
                         // 其他格式：使用标准方式
                         tag.deleteArtworkField()
@@ -380,7 +395,7 @@ class TagEditor(private val context: Context) {
                         artwork.pictureType = 3  // Front Cover
                         tag.setField(artwork)
                     }
-                    Log.d(TAG, "Cover art written: ${bytes.size} bytes, isFlac=$isFlac")
+                    Log.d(TAG, "Cover art written: ${bytes.size} bytes, isFlac=$isFlac, isWav=$isWav")
                 } catch (e: NoClassDefFoundError) {
                     coverError = "该格式暂不支持写入封面"
                     Log.e(TAG, "封面写入失败：Android 不支持 javax.imageio.ImageIO，$coverError")
