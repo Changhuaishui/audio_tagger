@@ -18,7 +18,9 @@ data class AudioMetadata(
     val duration: Long = 0,
     val bitrate: Int = 0,
     val sampleRate: Int = 0,
-    // 封面相关
+    // 封面相关 - 新统一模型
+    val cover: CoverArt? = null,
+    // 封面相关 - 兼容字段（本阶段保留，后续逐步移除）
     val coverArt: Bitmap? = null,          // 封面图片（用于显示）
     val coverArtBytes: ByteArray? = null,  // 封面原始数据（用于保存）
     val coverArtMimeType: String? = null   // 封面 MIME 类型
@@ -40,7 +42,21 @@ data class AudioMetadata(
             .ifEmpty { "未知" }
 
     val hasCoverArt: Boolean
-        get() = coverArt != null || coverArtBytes != null
+        get() = cover != null || coverArt != null || coverArtBytes != null
+
+    /**
+     * 获取用于写入的封面字节数据（优先从 cover 模型获取）
+     */
+    fun getCoverBytes(): ByteArray? {
+        return cover?.bytes ?: coverArtBytes
+    }
+
+    /**
+     * 获取用于写入的封面 MIME 类型（优先从 cover 模型获取）
+     */
+    fun getCoverMimeType(): String? {
+        return cover?.mimeType ?: coverArtMimeType
+    }
 
     /**
      * 从文件扩展名获取的格式（可能不正确）

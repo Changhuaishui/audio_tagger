@@ -16,6 +16,9 @@ class M4aAudioTagWriter : AudioTagWriter {
             return WriteResult.Error("不是有效的 M4A 文件。可能是 AAC 裸流，不支持元数据。")
         }
 
+        // 优先使用新的 CoverArt 模型，fallback 到旧字段
+        val coverBytes = metadata.getCoverBytes()
+
         val m4aMetadata = M4aTagWriter.M4aMetadata(
             title = metadata.title.ifEmpty { null },
             artist = metadata.artist.ifEmpty { null },
@@ -23,7 +26,7 @@ class M4aAudioTagWriter : AudioTagWriter {
             year = metadata.year.ifEmpty { null },
             genre = metadata.genre.ifEmpty { null },
             comment = metadata.comment.ifEmpty { null },
-            coverArt = metadata.coverArtBytes
+            coverArt = coverBytes
         )
 
         return when (val result = M4aTagWriter.writeMetadata(file, m4aMetadata)) {

@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
 import com.example.tagger.model.AudioMetadata
+import com.example.tagger.model.CoverArt
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
 import java.io.File
@@ -30,6 +31,13 @@ class JAudioTagReader : AudioTagReader {
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
             }
             val coverMimeType = artwork?.mimeType ?: "image/jpeg"
+            val cover = coverBytes?.let {
+                CoverArt(
+                    bytes = it,
+                    mimeType = coverMimeType,
+                    pictureType = artwork?.pictureType ?: CoverArt.FRONT_COVER
+                )
+            }
 
             Log.d(TAG, "JAudioTagger succeeded: format=${header.format}, hasCover=${coverBytes != null}")
 
@@ -48,6 +56,7 @@ class JAudioTagReader : AudioTagReader {
                 duration = header.trackLength.toLong(),
                 bitrate = header.bitRateAsNumber.toInt(),
                 sampleRate = header.sampleRateAsNumber,
+                cover = cover,
                 coverArt = coverBitmap,
                 coverArtBytes = coverBytes,
                 coverArtMimeType = coverMimeType

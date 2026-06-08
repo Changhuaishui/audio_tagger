@@ -71,6 +71,7 @@ fun MainScreen(
     onToggleSelectAll: () -> Unit = {},
     onRemoveSelected: () -> Unit = {},
     onOptimizeSelected: () -> Unit = {},  // 优化选中文件的违禁词
+    onRemoveSensitiveWords: () -> Unit = {},  // 删除选中文件名的违禁词
     // 视频提取
     onSelectVideoFormat: (AudioFormat) -> Unit = {},
     onSelectVideoTrack: (Int) -> Unit = {},
@@ -155,6 +156,17 @@ fun MainScreen(
                         }
                     },
                     actions = {
+                        // 删除违禁词按钮
+                        TextButton(
+                            onClick = onRemoveSensitiveWords,
+                            enabled = uiState.selectedUris.isNotEmpty()
+                        ) {
+                            Text(
+                                "删除违禁词",
+                                color = if (uiState.selectedUris.isNotEmpty()) AppPrimaryColor
+                                       else AppPrimaryColor.copy(alpha = 0.4f)
+                            )
+                        }
                         // 优化违禁词按钮
                         TextButton(
                             onClick = onOptimizeSelected,
@@ -182,7 +194,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0606f]", // 版本标记 - tagreader架构拆分Phase1
+                            "音乐标签 [v0608a]", // 版本标记 - 批量删除文件名违禁词
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
@@ -369,12 +381,25 @@ fun MainScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("处理方案")
                         }
-                        // 优化违禁词按钮
+                        // 删除违禁词按钮
                         Button(
-                            onClick = onOptimizeSelected,
+                            onClick = onRemoveSensitiveWords,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = AppPrimaryColor
                             ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Shield,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("删除违禁词")
+                        }
+                        // 优化违禁词按钮
+                        OutlinedButton(
+                            onClick = onOptimizeSelected,
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(

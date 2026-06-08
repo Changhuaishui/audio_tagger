@@ -157,7 +157,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // 如果音频本身没有封面，使用视频缩略图
                     coverArt = if (item.coverArt == null) thumbnail else item.coverArt,
                     coverArtBytes = if (item.coverArtBytes == null) thumbnailBytes else item.coverArtBytes,
-                    coverArtMimeType = if (item.coverArtBytes == null && thumbnailBytes != null) "image/jpeg" else item.coverArtMimeType
+                    coverArtMimeType = if (item.coverArtBytes == null && thumbnailBytes != null) "image/jpeg" else item.coverArtMimeType,
+                    cover = if (item.cover == null && thumbnailBytes != null) {
+                        com.example.tagger.model.CoverArt(thumbnailBytes, "image/jpeg")
+                    } else item.cover
                 )
 
                 _uiState.value = _uiState.value.copy(
@@ -195,7 +198,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val updatedItem = currentItem.copy(
                     coverArt = bitmap,
                     coverArtBytes = bytes,
-                    coverArtMimeType = mimeType
+                    coverArtMimeType = mimeType,
+                    cover = com.example.tagger.model.CoverArt(bytes, mimeType)
                 )
                 _uiState.value = _uiState.value.copy(selectedItem = updatedItem)
             }
@@ -206,7 +210,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 保存编辑后的元数据（包括文件名变更）
      */
     fun saveItem(item: AudioMetadata) {
-        if (requestWritePermissionIfNeeded(listOf(item.uri), PendingWriteAction.SAVE_ITEM, item)) {
+        if (requestWritePermissionIfNeeded(
+                uris = listOf(item.uri),
+                action = PendingWriteAction.SAVE_ITEM,
+                item = item,
+                requestAllLoadedMediaStoreUris = true
+            )
+        ) {
             return
         }
         saveItemAfterPermission(item)
@@ -467,6 +477,99 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isSelectionMode = false,
             message = "已移除 $removedCount 个文件"
         )
+    }
+
+    /**
+     * 批量删除选中文件名中的违禁词（纯删除，不做对调/分隔符）
+     *
+     * 注意：此功能只修改文件名，不修改文件内的元数据标签。
+     */
+    fun removeSensitiveWordsFromFileNames() {
+        val selectedUris = _uiState.value.selectedUris
+        if (selectedUris.isEmpty()) {
+            _uiState.value = _uiState.value.copy(message = "请先选择文件")
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+
+            val selectedItems = _uiState.value.audioList.filter { it.uri in selectedUris }
+            var removedCount = 0
+            var skippedCount = 0
+            val failedItems = mutableListOf<Pair<String, String>>()
+            val updatedList = _uiState.value.audioList.toMutableList()
+
+            for (item in selectedItems) {
+                try {
+                    val result = fileNameOptimizer.removeSensitiveWords(item.displayName)
+
+                    if (!result.isChanged) {
+                        skippedCount++
+                        continue
+                    }
+
+                    val renameResult = withContext(Dispatchers.IO) {
+                        tagEditor.renameFile(item.uri, result.optimizedName)
+                    }
+
+                    when (renameResult) {
+                        is RenameResult.Success -> {
+                            // 只更新 uri、displayName、filePath，不重新读取 tag
+                            val index = updatedList.indexOfFirst { it.uri == item.uri }
+                            if (index >= 0) {
+                                val oldItem = updatedList[index]
+                                updatedList[index] = oldItem.copy(
+                                    uri = renameResult.newUri,
+                                    displayName = result.optimizedName,
+                                    filePath = oldItem.filePath
+                                )
+                            }
+                            removedCount++
+                        }
+                        is RenameResult.Error -> {
+                            failedItems.add(item.displayName to renameResult.message)
+                        }
+                        is RenameResult.NeedPermission -> {
+                            failedItems.add(item.displayName to "需要写权限")
+                        }
+                    }
+                } catch (e: Exception) {
+                    failedItems.add(item.displayName to (e.message ?: "未知错误"))
+                }
+            }
+
+            val message = buildString {
+                if (removedCount > 0) {
+                    append("已删除 $removedCount 个文件名中的违禁词")
+                }
+                if (skippedCount > 0) {
+                    if (isNotEmpty()) append("，")
+                    append("$skippedCount 个无需处理")
+                }
+                if (failedItems.isNotEmpty()) {
+                    if (isNotEmpty()) append("\n")
+                    append("✗ ${failedItems.size} 个失败:")
+                    failedItems.take(3).forEach { (name, reason) ->
+                        append("\n  · $name: $reason")
+                    }
+                    if (failedItems.size > 3) {
+                        append("\n  ...还有 ${failedItems.size - 3} 个")
+                    }
+                }
+                if (removedCount == 0 && skippedCount == 0 && failedItems.isEmpty()) {
+                    append("选中文件名未发现违禁词")
+                }
+            }
+
+            _uiState.value = _uiState.value.copy(
+                audioList = updatedList,
+                selectedUris = emptySet(),
+                isSelectionMode = false,
+                isLoading = false,
+                message = message
+            )
+        }
     }
 
     /**
@@ -1376,9 +1479,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun requestWritePermissionIfNeeded(
         uris: List<Uri>,
         action: PendingWriteAction,
-        item: AudioMetadata? = null
+        item: AudioMetadata? = null,
+        requestAllLoadedMediaStoreUris: Boolean = false
     ): Boolean {
-        val mediaStoreUris = uris.filter { isMediaStoreUri(it) && !hasWritePermission(it) }
+        val mediaStoreUris = if (requestAllLoadedMediaStoreUris) {
+            collectAllPendingMediaStoreUris(uris)
+        } else {
+            uris.filter { isMediaStoreUri(it) && !hasWritePermission(it) }.distinct()
+        }
         if (mediaStoreUris.isEmpty()) return false
 
         pendingWriteAction = action
@@ -1407,9 +1515,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // 保存待执行操作，请求权限
         pendingWriteAction = when (action) {
             PendingRenameAction.OPTIMIZE_FILE_NAMES -> PendingWriteAction.OPTIMIZE_FILE_NAMES
+            PendingRenameAction.REMOVE_SENSITIVE_WORDS -> PendingWriteAction.REMOVE_SENSITIVE_WORDS
             PendingRenameAction.EXECUTE_PROCESS_SCHEME -> PendingWriteAction.EXECUTE_PROCESS_SCHEME
         }
         pendingSaveItem = null
+        pendingRequestedUris = mediaStoreUris
         viewModelScope.launch {
             _writePermissionRequest.emit(WritePermissionRequest(mediaStoreUris))
         }
@@ -1430,6 +1540,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             PendingWriteAction.SAVE_ITEM -> item?.let { saveItemAfterPermission(it) }
             PendingWriteAction.BATCH_SAVE_ALL -> batchSaveAllAfterPermission()
             PendingWriteAction.OPTIMIZE_FILE_NAMES -> optimizeSelectedFileNames()
+            PendingWriteAction.REMOVE_SENSITIVE_WORDS -> removeSensitiveWordsFromFileNames()
             PendingWriteAction.EXECUTE_PROCESS_SCHEME -> executeProcessScheme()
         }
     }
@@ -1450,8 +1561,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun executeRenameAction(action: PendingRenameAction) {
         when (action) {
             PendingRenameAction.OPTIMIZE_FILE_NAMES -> optimizeSelectedFileNames()
+            PendingRenameAction.REMOVE_SENSITIVE_WORDS -> removeSensitiveWordsFromFileNames()
             PendingRenameAction.EXECUTE_PROCESS_SCHEME -> executeProcessScheme()
         }
+    }
+
+    /**
+     * 单文件编辑时也一次性请求当前列表里所有 MediaStore 文件的写权限。
+     * Android 的 MediaStore 写授权按 URI 集合授予；一次请求多个 URI 后，后续批量保存不再重复弹框。
+     */
+    private fun collectAllPendingMediaStoreUris(triggerUris: List<Uri>): List<Uri> {
+        val allLoadedUris = _uiState.value.audioList.map { it.uri }
+        return (triggerUris + allLoadedUris)
+            .filter { isMediaStoreUri(it) && !hasWritePermission(it) }
+            .distinct()
     }
 }
 
@@ -1474,6 +1597,7 @@ data class WritePermissionRequest(val uris: List<Uri>)
  */
 enum class PendingRenameAction {
     OPTIMIZE_FILE_NAMES,
+    REMOVE_SENSITIVE_WORDS,
     EXECUTE_PROCESS_SCHEME
 }
 
@@ -1484,6 +1608,7 @@ private enum class PendingWriteAction {
     SAVE_ITEM,
     BATCH_SAVE_ALL,
     OPTIMIZE_FILE_NAMES,
+    REMOVE_SENSITIVE_WORDS,
     EXECUTE_PROCESS_SCHEME
 }
 

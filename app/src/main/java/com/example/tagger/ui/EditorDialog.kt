@@ -63,9 +63,9 @@ fun EditorDialog(
     var genre by remember { mutableStateOf(metadata.genre) }
     var comment by remember { mutableStateOf(metadata.comment) }
 
-    var coverBitmap by remember { mutableStateOf(metadata.coverArt) }
-    var coverBytes by remember { mutableStateOf(metadata.coverArtBytes) }
-    var coverMimeType by remember { mutableStateOf(metadata.coverArtMimeType) }
+    var coverBitmap by remember { mutableStateOf(metadata.coverArt ?: metadata.cover?.toBitmap()) }
+    var coverBytes by remember { mutableStateOf(metadata.getCoverBytes()) }
+    var coverMimeType by remember { mutableStateOf(metadata.getCoverMimeType()) }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -73,10 +73,10 @@ fun EditorDialog(
         uri?.let { onPickCover(it) }
     }
 
-    LaunchedEffect(metadata.coverArt, metadata.coverArtBytes) {
-        coverBitmap = metadata.coverArt
-        coverBytes = metadata.coverArtBytes
-        coverMimeType = metadata.coverArtMimeType
+    LaunchedEffect(metadata.coverArt, metadata.coverArtBytes, metadata.cover) {
+        coverBitmap = metadata.coverArt ?: metadata.cover?.toBitmap()
+        coverBytes = metadata.getCoverBytes()
+        coverMimeType = metadata.getCoverMimeType()
     }
 
     Dialog(

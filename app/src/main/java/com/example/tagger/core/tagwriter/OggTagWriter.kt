@@ -2,6 +2,7 @@ package com.example.tagger.core.tagwriter
 
 import android.graphics.BitmapFactory
 import android.util.Log
+import com.example.tagger.model.CoverArt
 import org.jaudiotagger.audio.flac.metadatablock.MetadataBlockDataPicture
 import org.jaudiotagger.tag.Tag
 import org.jaudiotagger.tag.vorbiscomment.VorbisCommentFieldKey
@@ -21,7 +22,7 @@ class OggTagWriter : JAudioTagWriter() {
 
         val picture = MetadataBlockDataPicture(
             imageData,
-            3,
+            CoverArt.FRONT_COVER,
             mimeType,
             "",
             options.outWidth,

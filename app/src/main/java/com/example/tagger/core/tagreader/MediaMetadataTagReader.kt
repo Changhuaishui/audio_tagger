@@ -5,6 +5,8 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
 import com.example.tagger.model.AudioMetadata
+import com.example.tagger.model.CoverArt
+import com.example.tagger.model.coverArtFromBytes
 import java.io.File
 
 private const val TAG = "MediaMetadataTagReader"
@@ -36,6 +38,7 @@ class MediaMetadataTagReader : AudioTagReader {
             val coverBitmap = coverBytes?.let { bytes ->
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
             }
+            val cover = coverArtFromBytes(coverBytes, "image/jpeg")
 
             retriever.release()
 
@@ -66,6 +69,7 @@ class MediaMetadataTagReader : AudioTagReader {
                 duration = durationMs / 1000,
                 bitrate = bitrate / 1000,  // 转换为 kbps
                 sampleRate = 0,  // MediaMetadataRetriever 不直接提供采样率
+                cover = cover,
                 coverArt = coverBitmap,
                 coverArtBytes = coverBytes,
                 coverArtMimeType = "image/jpeg"  // MediaMetadataRetriever 不提供具体类型

@@ -10,7 +10,8 @@ private const val TAG = "WavTagReader"
 /**
  * WAV 标签读取器
  * - 先读 MediaMetadataRetriever，保留时长、码率、格式等基础信息
- * - 再读 JAudioTagReader，用其文字标签和封面覆盖 MMR 的标签字段
+ * - 再读 JAudioTagReader
+ * - 用 JAudioTagger 的文字标签和封面覆盖 MMR 的标签字段
  * - 保留 MMR 的 duration/bitrate/sampleRate
  */
 class WavTagReader : AudioTagReader {
@@ -58,6 +59,7 @@ class WavTagReader : AudioTagReader {
             genre = jat.genre.takeIf { it.isNotEmpty() } ?: mmr.genre,
             comment = jat.comment.takeIf { it.isNotEmpty() } ?: mmr.comment,
             // JAudioTagger 的封面更可靠
+            cover = jat.cover ?: mmr.cover,
             coverArt = jat.coverArt ?: mmr.coverArt,
             coverArtBytes = jat.coverArtBytes ?: mmr.coverArtBytes,
             coverArtMimeType = jat.coverArtMimeType ?: mmr.coverArtMimeType

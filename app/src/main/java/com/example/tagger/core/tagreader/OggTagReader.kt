@@ -58,6 +58,7 @@ class OggTagReader : AudioTagReader {
             genre = jat.genre.takeIf { it.isNotEmpty() } ?: mmr.genre,
             comment = jat.comment.takeIf { it.isNotEmpty() } ?: mmr.comment,
             // JAudioTagger 的封面更可靠（OGG 使用 METADATA_BLOCK_PICTURE）
+            cover = jat.cover ?: mmr.cover,
             coverArt = jat.coverArt ?: mmr.coverArt,
             coverArtBytes = jat.coverArtBytes ?: mmr.coverArtBytes,
             coverArtMimeType = jat.coverArtMimeType ?: mmr.coverArtMimeType

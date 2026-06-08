@@ -44,9 +44,12 @@ abstract class JAudioTagWriter : AudioTagWriter {
             writeTextFields(tag, metadata)
 
             var coverError: String? = null
-            metadata.coverArtBytes?.let { bytes ->
+            // 优先使用新的 CoverArt 模型，fallback 到旧字段
+            val coverBytes = metadata.getCoverBytes()
+            val coverMimeType = metadata.getCoverMimeType()
+            coverBytes?.let { bytes ->
                 coverError = try {
-                    writeCover(tag, bytes, metadata.coverArtMimeType ?: "image/jpeg")
+                    writeCover(tag, bytes, coverMimeType ?: "image/jpeg")
                     null
                 } catch (e: NoClassDefFoundError) {
                     Log.e(TAG, "封面写入失败：Android 不支持 javax.imageio.ImageIO，该格式暂不支持写入封面")

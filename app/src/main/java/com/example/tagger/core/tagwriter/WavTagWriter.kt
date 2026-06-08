@@ -1,6 +1,7 @@
 package com.example.tagger.core.tagwriter
 
 import android.util.Log
+import com.example.tagger.model.CoverArt
 import org.jaudiotagger.audio.wav.WavOptions
 import org.jaudiotagger.audio.wav.WavSaveOptions
 import org.jaudiotagger.tag.Tag
@@ -35,7 +36,7 @@ class WavTagWriter : JAudioTagWriter() {
         val artwork = ArtworkFactory.getNew()
         artwork.binaryData = imageData
         artwork.mimeType = mimeType
-        artwork.pictureType = 3
+        artwork.pictureType = CoverArt.FRONT_COVER
         id3Tag.setField(artwork)
 
         wavTag.setID3Tag(id3Tag)

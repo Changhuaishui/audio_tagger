@@ -154,4 +154,74 @@ class FileNameOptimizer(private val sensitiveChecker: SensitiveWordChecker) {
     suspend fun optimizeBatch(fileNames: List<String>): List<OptimizeResult> {
         return fileNames.map { optimize(it) }
     }
+
+    /**
+     * 纯删除文件名中的违禁词（不做字符对调、不插入分隔符）
+     *
+     * @param fileName 完整文件名（含扩展名）
+     * @return 优化结果
+     */
+    suspend fun removeSensitiveWords(fileName: String): OptimizeResult {
+        val lastDotIndex = fileName.lastIndexOf('.')
+        val nameWithoutExt = if (lastDotIndex > 0) fileName.substring(0, lastDotIndex) else fileName
+        val extension = if (lastDotIndex > 0 && lastDotIndex < fileName.length - 1) {
+            fileName.substring(lastDotIndex + 1)
+        } else ""
+
+        var currentName = nameWithoutExt
+        val appliedStrategies = mutableListOf<AppliedStrategy>()
+
+        // 循环删除所有命中的违禁词
+        var maxIterations = 50  // 防止无限循环
+        while (maxIterations-- > 0) {
+            val checkResult = sensitiveChecker.checkOffline(currentName)
+            if (checkResult.isClean) break
+
+            val foundWord = checkResult.foundWords.firstOrNull() ?: break
+            val word = foundWord.word
+            val newName = currentName.replace(word, "", ignoreCase = true)
+
+            if (newName == currentName) break
+
+            appliedStrategies.add(
+                AppliedStrategy(
+                    word = word,
+                    strategy = Strategy.DELETE,
+                    before = currentName,
+                    after = newName
+                )
+            )
+            currentName = newName
+        }
+
+        // 清理多余空白和连续分隔符
+        var cleanedName = currentName
+            .replace(Regex("[ ]{2,}"), " ")       // 连续空格压缩为一个空格
+            .replace(Regex("[_]{2,}"), "_")       // 连续下划线压缩
+            .replace(Regex("[-]{2,}"), "-")       // 连续短横线压缩
+            .replace(Regex("[·]{2,}"), "·")       // 连续中点压缩
+            .replace(Regex("[ ]+"), " ")          // 再次清理空格
+            .trim()
+
+        // 清理首尾分隔符
+        cleanedName = cleanedName.trimStart('_', '-', '·', ' ')
+            .trimEnd('_', '-', '·', ' ')
+
+        // 如果删除后主体为空，保持原文件名（返回未改变的结果）
+        val finalNameWithoutExt = if (cleanedName.isEmpty()) nameWithoutExt else cleanedName
+        val isChanged = finalNameWithoutExt != nameWithoutExt
+
+        val finalFileName = if (extension.isNotEmpty()) {
+            "$finalNameWithoutExt.$extension"
+        } else {
+            finalNameWithoutExt
+        }
+
+        return OptimizeResult(
+            originalName = fileName,
+            optimizedName = finalFileName,
+            appliedStrategies = appliedStrategies,
+            isChanged = isChanged
+        )
+    }
 }
