@@ -43,6 +43,8 @@ import com.example.tagger.ui.theme.AppPrimaryColor
 import com.example.tagger.ui.theme.AppleGray1
 import com.example.tagger.ui.theme.AppleGray5
 import com.example.tagger.ui.theme.AppleGray6
+import com.example.tagger.ui.player.MiniPlayer
+import com.example.tagger.ui.player.PlayerUiState
 import com.example.tagger.ui.video.ExtractionProgressDialog
 import com.example.tagger.ui.video.FormatSelectorSheet
 import com.example.tagger.ui.video.VideoUiState
@@ -52,6 +54,7 @@ import com.example.tagger.ui.video.VideoUiState
 fun MainScreen(
     uiState: MainUiState,
     videoUiState: VideoUiState = VideoUiState(),
+    playerState: PlayerUiState = PlayerUiState(),
     onPickFiles: () -> Unit,
     onPickVideo: () -> Unit = {},
     onSelectItem: (AudioMetadata?) -> Unit,
@@ -110,7 +113,13 @@ fun MainScreen(
     onToggleReplacementRule: (String) -> Unit = {},
     onExecuteProcessScheme: () -> Unit = {},
     // 外部应用打开（选中的文件）
-    onOpenWithExternalApp: () -> Unit = {}
+    onOpenWithExternalApp: () -> Unit = {},
+    // 播放器
+    onPlayItem: (AudioMetadata) -> Unit = {},
+    onTogglePlayPause: () -> Unit = {},
+    onPlayNext: () -> Unit = {},
+    onPlayPrevious: () -> Unit = {},
+    onSeekTo: (Long) -> Unit = {}
 ) {
     val uriHandler = LocalUriHandler.current
     var showMenu by remember { mutableStateOf(false) }
@@ -194,7 +203,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0608a]", // 版本标记 - 批量删除文件名违禁词
+                            "音乐标签 [v0608c]", // 版本标记 - 播放按钮状态同步
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
@@ -429,6 +438,19 @@ fun MainScreen(
                     }
                 }
             }
+
+            // 普通模式底部迷你播放器
+            AnimatedVisibility(
+                visible = !uiState.isSelectionMode && playerState.currentItem != null
+            ) {
+                MiniPlayer(
+                    playerState = playerState,
+                    onTogglePlayPause = onTogglePlayPause,
+                    onPlayNext = onPlayNext,
+                    onPlayPrevious = onPlayPrevious,
+                    onSeekTo = onSeekTo
+                )
+            }
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
@@ -454,6 +476,8 @@ fun MainScreen(
                     items = uiState.audioList,
                     isSelectionMode = uiState.isSelectionMode,
                     selectedUris = uiState.selectedUris,
+                    currentPlayingUri = playerState.currentItem?.uri,
+                    isPlayerPlaying = playerState.isPlaying,
                     onItemClick = { item ->
                         if (uiState.isSelectionMode) {
                             onToggleItemSelection(item)
@@ -465,6 +489,13 @@ fun MainScreen(
                         if (!uiState.isSelectionMode) {
                             onToggleSelectionMode()
                             onToggleItemSelection(item)
+                        }
+                    },
+                    onPlayItem = { item ->
+                        if (playerState.currentItem?.uri == item.uri) {
+                            onTogglePlayPause()
+                        } else {
+                            onPlayItem(item)
                         }
                     }
                 )
@@ -667,8 +698,11 @@ private fun AudioList(
     items: List<AudioMetadata>,
     isSelectionMode: Boolean,
     selectedUris: Set<Uri>,
+    currentPlayingUri: Uri? = null,
+    isPlayerPlaying: Boolean = false,
     onItemClick: (AudioMetadata) -> Unit,
-    onItemLongClick: (AudioMetadata) -> Unit
+    onItemLongClick: (AudioMetadata) -> Unit,
+    onPlayItem: (AudioMetadata) -> Unit = {}
 ) {
     LazyColumn(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -689,14 +723,17 @@ private fun AudioList(
                 metadata = item,
                 isSelectionMode = isSelectionMode,
                 isSelected = selectedUris.contains(item.uri),
+                isCurrentItem = currentPlayingUri == item.uri,
+                isPlaying = currentPlayingUri == item.uri && isPlayerPlaying,
                 onClick = { onItemClick(item) },
-                onLongClick = { onItemLongClick(item) }
+                onLongClick = { onItemLongClick(item) },
+                onPlay = { onPlayItem(item) }
             )
         }
 
-        // 底部留白
+        // 底部留白（为迷你播放器留出空间）
         item {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(80.dp))
         }
     }
 }
@@ -707,8 +744,11 @@ private fun AudioItem(
     metadata: AudioMetadata,
     isSelectionMode: Boolean,
     isSelected: Boolean,
+    isCurrentItem: Boolean = false,
+    isPlaying: Boolean = false,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    onPlay: () -> Unit = {}
 ) {
     Surface(
         modifier = Modifier
@@ -718,7 +758,9 @@ private fun AudioItem(
                 onLongClick = onLongClick
             ),
         shape = RoundedCornerShape(16.dp),
-        color = if (isSelected) AppPrimaryColor.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surface,
+        color = if (isSelected) AppPrimaryColor.copy(alpha = 0.1f)
+                else if (isCurrentItem) AppPrimaryColor.copy(alpha = 0.05f)
+                else MaterialTheme.colorScheme.surface,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
@@ -804,13 +846,28 @@ private fun AudioItem(
                 }
             }
 
-            // 箭头指示
-            Icon(
-                Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = AppleGray1,
-                modifier = Modifier.size(20.dp)
-            )
+            // 非选择模式下显示播放按钮
+            if (!isSelectionMode) {
+                IconButton(
+                    onClick = onPlay,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "暂停" else "播放",
+                        tint = AppPrimaryColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            } else {
+                // 选择模式显示箭头指示
+                Icon(
+                    Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = AppleGray1,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }

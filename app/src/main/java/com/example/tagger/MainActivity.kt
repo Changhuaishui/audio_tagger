@@ -25,6 +25,7 @@ import androidx.lifecycle.lifecycleScope
 import com.example.tagger.ui.MainScreen
 import com.example.tagger.ui.MainViewModel
 import com.example.tagger.ui.PendingRenameAction
+import com.example.tagger.ui.player.PlayerViewModel
 import com.example.tagger.ui.theme.AudioTaggerTheme
 import com.example.tagger.ui.video.VideoViewModel
 import kotlinx.coroutines.launch
@@ -33,12 +34,13 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         // 版本标记 - 用于验证新版本正在运行
-        const val VERSION_TAG = "v0608a_remove_sensitive_filename"
+        const val VERSION_TAG = "v0608c_player_button_sync"
         private const val TAG = "MainActivity"
     }
 
     private val viewModel: MainViewModel by viewModels()
     private val videoViewModel: VideoViewModel by viewModels()
+    private val playerViewModel: PlayerViewModel by viewModels()
 
     // 待执行的操作类型
     private var pendingPickerType: PickerType? = null
@@ -139,10 +141,12 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val uiState by viewModel.uiState.collectAsState()
                     val videoUiState by videoViewModel.uiState.collectAsState()
+                    val playerState by playerViewModel.uiState.collectAsState()
 
                     MainScreen(
                         uiState = uiState,
                         videoUiState = videoUiState,
+                        playerState = playerState,
                         onPickFiles = { checkAudioPermissionAndPick() },
                         onPickVideo = { checkVideoPermissionAndPick() },
                         onSelectItem = { viewModel.selectItem(it) },
@@ -222,7 +226,13 @@ class MainActivity : ComponentActivity() {
                             val selectedItems = uiState.audioList.filter { it.uri in uiState.selectedUris }
                             selectedItems.forEach { openWithExternalApp(it.uri) }
                         },
-                        onOpenSingleFile = { openWithExternalApp(it.uri) }
+                        onOpenSingleFile = { openWithExternalApp(it.uri) },
+                        // 前台播放器
+                        onPlayItem = { item -> playerViewModel.setPlaylistAndPlay(uiState.audioList, item) },
+                        onTogglePlayPause = { playerViewModel.togglePlayPause() },
+                        onPlayNext = { playerViewModel.playNext() },
+                        onPlayPrevious = { playerViewModel.playPrevious() },
+                        onSeekTo = { playerViewModel.seekTo(it) }
                     )
                 }
             }
