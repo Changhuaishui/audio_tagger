@@ -15,6 +15,7 @@ import com.example.tagger.core.SensitiveCheckResult
 import com.example.tagger.core.SensitiveWordChecker
 import com.example.tagger.core.TagEditor
 import com.example.tagger.core.WriteResult
+import com.example.tagger.core.smart.SmartReplacer
 import com.example.tagger.data.UserPreferencesRepository
 import com.example.tagger.model.AudioMetadata
 import com.example.tagger.model.ObfuscationMode
@@ -67,7 +68,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val tagEditor = TagEditor(application)
     private val sensitiveChecker = SensitiveWordChecker(application)
-    private val fileNameOptimizer = FileNameOptimizer(sensitiveChecker)
+    private val smartReplacer = SmartReplacer(application)
+    private val fileNameOptimizer = FileNameOptimizer(sensitiveChecker, smartReplacer)
     private val preferencesRepository = UserPreferencesRepository(application)
     private val fileNameProcessor = FileNameProcessor(preferencesRepository)
 
@@ -687,6 +689,96 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * 智能替换选中文件名中的违禁词（意会/拼音/相近字/语序）
+     */
+    fun smartReplaceSelectedFileNames() {
+        val selectedUris = _uiState.value.selectedUris
+        if (selectedUris.isEmpty()) {
+            _uiState.value = _uiState.value.copy(message = "请先选择文件")
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true)
+
+            val selectedItems = _uiState.value.audioList.filter { it.uri in selectedUris }
+            var replacedCount = 0
+            var skippedCount = 0
+            val failedItems = mutableListOf<Pair<String, String>>()
+            val updatedList = _uiState.value.audioList.toMutableList()
+
+            for (item in selectedItems) {
+                try {
+                    val result = fileNameOptimizer.smartReplace(item.displayName)
+
+                    if (!result.isChanged) {
+                        skippedCount++
+                        continue
+                    }
+
+                    val renameResult = withContext(Dispatchers.IO) {
+                        tagEditor.renameFile(item.uri, result.optimizedName)
+                    }
+
+                    when (renameResult) {
+                        is RenameResult.Success -> {
+                            val index = updatedList.indexOfFirst { it.uri == item.uri }
+                            if (index >= 0) {
+                                val oldItem = updatedList[index]
+                                updatedList[index] = oldItem.copy(
+                                    uri = renameResult.newUri,
+                                    displayName = result.optimizedName,
+                                    filePath = oldItem.filePath
+                                )
+                            }
+                            replacedCount++
+                        }
+                        is RenameResult.Error -> {
+                            failedItems.add(item.displayName to renameResult.message)
+                        }
+                        is RenameResult.NeedPermission -> {
+                            failedItems.add(item.displayName to "需要写权限")
+                        }
+                    }
+                } catch (e: Exception) {
+                    failedItems.add(item.displayName to (e.message ?: "未知错误"))
+                }
+            }
+
+            val message = buildString {
+                if (replacedCount > 0) {
+                    append("已智能替换 $replacedCount 个文件名中的违禁词")
+                }
+                if (skippedCount > 0) {
+                    if (isNotEmpty()) append("，")
+                    append("$skippedCount 个无需处理")
+                }
+                if (failedItems.isNotEmpty()) {
+                    if (isNotEmpty()) append("\n")
+                    append("✗ ${failedItems.size} 个失败:")
+                    failedItems.take(3).forEach { (name, reason) ->
+                        append("\n  · $name: $reason")
+                    }
+                    if (failedItems.size > 3) {
+                        append("\n  ...还有 ${failedItems.size - 3} 个")
+                    }
+                }
+                if (replacedCount == 0 && skippedCount == 0 && failedItems.isEmpty()) {
+                    append("选中文件名未发现违禁词")
+                }
+            }
+
+            _uiState.value = _uiState.value.copy(
+                audioList = updatedList,
+                selectedUris = emptySet(),
+                isSelectionMode = false,
+                isLoading = false,
+                message = message
+            )
+        }
+    }
+
+    /**
      * 从文件路径加载音频（用于导入转换后的文件）
      */
     fun loadAudioFilesFromPaths(paths: List<String>) {
@@ -718,6 +810,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         viewModelScope.launch {
             sensitiveChecker.initialize()
+            // 初始化智能替换引擎
+            smartReplacer.initialize(sensitiveChecker)
             // 初始化完成后更新词库到 UI 状态
             _uiState.value = _uiState.value.copy(
                 sensitiveWords = sensitiveChecker.getWordSet()
@@ -1516,6 +1610,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pendingWriteAction = when (action) {
             PendingRenameAction.OPTIMIZE_FILE_NAMES -> PendingWriteAction.OPTIMIZE_FILE_NAMES
             PendingRenameAction.REMOVE_SENSITIVE_WORDS -> PendingWriteAction.REMOVE_SENSITIVE_WORDS
+            PendingRenameAction.SMART_REPLACE -> PendingWriteAction.SMART_REPLACE
             PendingRenameAction.EXECUTE_PROCESS_SCHEME -> PendingWriteAction.EXECUTE_PROCESS_SCHEME
         }
         pendingSaveItem = null
@@ -1541,6 +1636,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             PendingWriteAction.BATCH_SAVE_ALL -> batchSaveAllAfterPermission()
             PendingWriteAction.OPTIMIZE_FILE_NAMES -> optimizeSelectedFileNames()
             PendingWriteAction.REMOVE_SENSITIVE_WORDS -> removeSensitiveWordsFromFileNames()
+            PendingWriteAction.SMART_REPLACE -> smartReplaceSelectedFileNames()
             PendingWriteAction.EXECUTE_PROCESS_SCHEME -> executeProcessScheme()
         }
     }
@@ -1562,6 +1658,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         when (action) {
             PendingRenameAction.OPTIMIZE_FILE_NAMES -> optimizeSelectedFileNames()
             PendingRenameAction.REMOVE_SENSITIVE_WORDS -> removeSensitiveWordsFromFileNames()
+            PendingRenameAction.SMART_REPLACE -> smartReplaceSelectedFileNames()
             PendingRenameAction.EXECUTE_PROCESS_SCHEME -> executeProcessScheme()
         }
     }
@@ -1598,6 +1695,7 @@ data class WritePermissionRequest(val uris: List<Uri>)
 enum class PendingRenameAction {
     OPTIMIZE_FILE_NAMES,
     REMOVE_SENSITIVE_WORDS,
+    SMART_REPLACE,
     EXECUTE_PROCESS_SCHEME
 }
 
@@ -1609,6 +1707,7 @@ private enum class PendingWriteAction {
     BATCH_SAVE_ALL,
     OPTIMIZE_FILE_NAMES,
     REMOVE_SENSITIVE_WORDS,
+    SMART_REPLACE,
     EXECUTE_PROCESS_SCHEME
 }
 

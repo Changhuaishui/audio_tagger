@@ -92,6 +92,9 @@ dependencies {
     // Media3 ExoPlayer
     implementation(libs.androidx.media3.exoplayer)
 
+    // Pinyin4j for Chinese pinyin conversion (sensitive word detection)
+    implementation(libs.pinyin4j)
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

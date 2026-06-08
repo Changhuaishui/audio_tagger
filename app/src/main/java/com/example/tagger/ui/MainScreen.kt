@@ -75,6 +75,7 @@ fun MainScreen(
     onRemoveSelected: () -> Unit = {},
     onOptimizeSelected: () -> Unit = {},  // 优化选中文件的违禁词
     onRemoveSensitiveWords: () -> Unit = {},  // 删除选中文件名的违禁词
+    onSmartReplace: () -> Unit = {},  // 智能替换选中文件名的违禁词
     // 视频提取
     onSelectVideoFormat: (AudioFormat) -> Unit = {},
     onSelectVideoTrack: (Int) -> Unit = {},
@@ -165,13 +166,24 @@ fun MainScreen(
                         }
                     },
                     actions = {
+                        // 智能替换按钮
+                        TextButton(
+                            onClick = onSmartReplace,
+                            enabled = uiState.selectedUris.isNotEmpty()
+                        ) {
+                            Text(
+                                "智能替换",
+                                color = if (uiState.selectedUris.isNotEmpty()) AppPrimaryColor
+                                       else AppPrimaryColor.copy(alpha = 0.4f)
+                            )
+                        }
                         // 删除违禁词按钮
                         TextButton(
                             onClick = onRemoveSensitiveWords,
                             enabled = uiState.selectedUris.isNotEmpty()
                         ) {
                             Text(
-                                "删除违禁词",
+                                "删除",
                                 color = if (uiState.selectedUris.isNotEmpty()) AppPrimaryColor
                                        else AppPrimaryColor.copy(alpha = 0.4f)
                             )
@@ -203,7 +215,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0608c]", // 版本标记 - 播放按钮状态同步
+                            "音乐标签 [v0608d]", // 版本标记 - 智能替换违禁词
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
@@ -390,9 +402,9 @@ fun MainScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("处理方案")
                         }
-                        // 删除违禁词按钮
+                        // 智能替换按钮
                         Button(
-                            onClick = onRemoveSensitiveWords,
+                            onClick = onSmartReplace,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = AppPrimaryColor
                             ),
@@ -400,6 +412,19 @@ fun MainScreen(
                         ) {
                             Icon(
                                 Icons.Outlined.Shield,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("智能替换")
+                        }
+                        // 删除违禁词按钮
+                        OutlinedButton(
+                            onClick = onRemoveSensitiveWords,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Delete,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )

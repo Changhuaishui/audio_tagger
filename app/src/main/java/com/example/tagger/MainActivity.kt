@@ -169,6 +169,7 @@ class MainActivity : ComponentActivity() {
                         onRemoveSelected = { viewModel.removeSelectedItems() },
                         onOptimizeSelected = { viewModel.requestWritePermissionAndRename(PendingRenameAction.OPTIMIZE_FILE_NAMES) },
                         onRemoveSensitiveWords = { viewModel.requestWritePermissionAndRename(PendingRenameAction.REMOVE_SENSITIVE_WORDS) },
+                        onSmartReplace = { viewModel.requestWritePermissionAndRename(PendingRenameAction.SMART_REPLACE) },
                         // 视频提取
                         onSelectVideoFormat = { videoViewModel.selectFormat(it) },
                         onSelectVideoTrack = { videoViewModel.selectTrack(it) },
