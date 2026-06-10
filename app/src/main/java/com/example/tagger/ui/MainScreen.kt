@@ -121,7 +121,8 @@ fun MainScreen(
     onTogglePlayPause: () -> Unit = {},
     onPlayNext: () -> Unit = {},
     onPlayPrevious: () -> Unit = {},
-    onSeekTo: (Long) -> Unit = {}
+    onSeekTo: (Long) -> Unit = {},
+    onClearPlayerError: () -> Unit = {}
 ) {
     // 全屏播放器本地状态
     var showFullPlayer by remember { mutableStateOf(false) }
@@ -142,6 +143,14 @@ fun MainScreen(
         videoUiState.message?.let {
             snackbarHostState.showSnackbar(it)
             onClearVideoMessage()
+        }
+    }
+
+    // 播放器错误提示
+    LaunchedEffect(playerState.errorMessage) {
+        playerState.errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            onClearPlayerError()
         }
     }
 
@@ -218,7 +227,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0608e]", // 版本标记 - 全屏播放页
+                            "音乐标签 [v0610a]", // 版本标记 - 播放器优化（列表打开全屏、MiniPlayer 进度条、错误提示）
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
@@ -526,6 +535,8 @@ fun MainScreen(
                         } else {
                             onPlayItem(item)
                         }
+                        // 点击播放按钮后打开全屏播放页
+                        showFullPlayer = true
                     }
                 )
             }
@@ -832,9 +843,10 @@ private fun AudioItem(
                     .background(AppleGray6),
                 contentAlignment = Alignment.Center
             ) {
-                if (metadata.coverArt != null) {
+                val coverBitmap = metadata.coverArt ?: metadata.cover?.toBitmap()
+                if (coverBitmap != null) {
                     Image(
-                        bitmap = metadata.coverArt.asImageBitmap(),
+                        bitmap = coverBitmap.asImageBitmap(),
                         contentDescription = "封面",
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop

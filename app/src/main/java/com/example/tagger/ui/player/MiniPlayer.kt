@@ -42,10 +42,18 @@ fun MiniPlayer(
 ) {
     val currentItem = playerState.currentItem ?: return
 
+    val safeDuration = playerState.duration.coerceAtLeast(0L)
+    val safePosition = playerState.currentPosition.coerceIn(0L, safeDuration)
+    val progress = if (safeDuration > 0) {
+        safePosition.toFloat() / safeDuration.toFloat()
+    } else {
+        0f
+    }
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(72.dp)
+            .height(76.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -55,108 +63,126 @@ fun MiniPlayer(
         tonalElevation = 3.dp,
         shadowElevation = 4.dp
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // 封面
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(AppleGray6),
-                contentAlignment = Alignment.Center
-            ) {
-                if (currentItem.coverArt != null) {
-                    Image(
-                        bitmap = currentItem.coverArt.asImageBitmap(),
-                        contentDescription = "封面",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = AppleGray1
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            // 歌曲信息
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = currentItem.displayTitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = currentItem.artist.ifEmpty { "未知艺术家" },
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = AppleGray1
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 顶部进度条
+            if (safeDuration > 0) {
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .align(Alignment.TopCenter),
+                    color = AppPrimaryColor,
+                    trackColor = AppleGray1.copy(alpha = 0.2f),
+                    gapSize = 0.dp
                 )
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // 控制按钮（使用独立 Box + clickable 避免冒泡到父级 Surface）
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = 2.dp)
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
-                    onClick = onPlayPrevious,
-                    modifier = Modifier.size(40.dp)
+                // 封面
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(AppleGray6),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.SkipPrevious,
-                        contentDescription = "上一首",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-
-                IconButton(
-                    onClick = onTogglePlayPause,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    if (playerState.isBuffering) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = AppPrimaryColor,
-                            strokeWidth = 2.dp
+                    val coverBitmap = currentItem.coverArt ?: currentItem.cover?.toBitmap()
+                    if (coverBitmap != null) {
+                        Image(
+                            bitmap = coverBitmap.asImageBitmap(),
+                            contentDescription = "封面",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
                         )
                     } else {
                         Icon(
-                            imageVector = if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (playerState.isPlaying) "暂停" else "播放",
-                            tint = AppPrimaryColor,
-                            modifier = Modifier.size(28.dp)
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = AppleGray1
                         )
                     }
                 }
 
-                IconButton(
-                    onClick = onPlayNext,
-                    modifier = Modifier.size(40.dp)
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // 歌曲信息
+                Column(
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.SkipNext,
-                        contentDescription = "下一首",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(24.dp)
+                    Text(
+                        text = currentItem.displayTitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
+                    Text(
+                        text = currentItem.artist.ifEmpty { "未知艺术家" },
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = AppleGray1
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // 控制按钮（使用独立 Box + clickable 避免冒泡到父级 Surface）
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    IconButton(
+                        onClick = onPlayPrevious,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SkipPrevious,
+                            contentDescription = "上一首",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onTogglePlayPause,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        if (playerState.isBuffering) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = AppPrimaryColor,
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (playerState.isPlaying) "暂停" else "播放",
+                                tint = AppPrimaryColor,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onPlayNext,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SkipNext,
+                            contentDescription = "下一首",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
         }

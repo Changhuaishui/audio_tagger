@@ -8,6 +8,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import com.example.tagger.model.AudioMetadata
 import kotlinx.coroutines.delay
@@ -56,8 +57,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     currentIndex = index,
                     currentItem = item,
                     currentPosition = 0L,
-                    duration = exoPlayer.duration.coerceAtLeast(0L)
+                    duration = exoPlayer.duration.coerceAtLeast(0L),
+                    errorMessage = null
                 )
+            }
+
+            override fun onPlayerErrorChanged(error: PlaybackException?) {
+                val message = error?.let {
+                    Log.e(TAG, "播放错误: ${it.errorCodeName} - ${it.message}")
+                    resolveErrorMessage(it)
+                }
+                _uiState.value = _uiState.value.copy(errorMessage = message)
             }
         })
 
@@ -73,6 +83,29 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 delay(500L)
             }
         }
+    }
+
+    /**
+     * 将 ExoPlayer 错误码转换为中文提示
+     */
+    private fun resolveErrorMessage(error: PlaybackException): String {
+        return when (error.errorCode) {
+            PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND -> "无法找到音频文件"
+            PlaybackException.ERROR_CODE_IO_NO_PERMISSION -> "没有权限播放该文件"
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED -> "网络连接失败"
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED -> "解码器初始化失败"
+            PlaybackException.ERROR_CODE_DECODING_FAILED -> "音频解码失败，格式可能不支持"
+            PlaybackException.ERROR_CODE_TIMEOUT -> "播放超时，请重试"
+            PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW -> "直播流已过期"
+            else -> "播放失败: ${error.errorCodeName}"
+        }
+    }
+
+    /**
+     * 清除错误提示
+     */
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 
     /**
