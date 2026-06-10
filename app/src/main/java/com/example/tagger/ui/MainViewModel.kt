@@ -94,6 +94,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var pendingWriteAction: PendingWriteAction? = null
     private var pendingSaveItem: AudioMetadata? = null
     private var pendingRequestedUris: List<Uri> = emptyList()
+    private var pendingBatchCoverUris: List<Uri> = emptyList()
+    private var pendingBatchCoverMode: com.example.tagger.model.CoverAssignmentMode = com.example.tagger.model.CoverAssignmentMode.SAME
 
     /** 已通过 MediaStore.createWriteRequest() 获得写权限的 URI（内存缓存） */
     private val grantedMediaStoreUris = mutableSetOf<Uri>()
@@ -856,7 +858,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * 批量为选中文件添加封面
+     * 批量为选中文件添加封面（入口，先检查 MediaStore 写权限）
      *
      * @param imageUris 选择的图片 URI 列表
      * @param mode 封面分配策略
@@ -872,9 +874,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        val selectedItems = _uiState.value.audioList.filter { it.uri in selectedUris }
+        val mediaStoreUris = collectMediaStoreUris(selectedItems)
+
+        if (mediaStoreUris.isNotEmpty()) {
+            // 需要请求 MediaStore 写权限
+            pendingWriteAction = PendingWriteAction.BATCH_APPLY_COVER
+            pendingBatchCoverUris = imageUris
+            pendingBatchCoverMode = mode
+            pendingSaveItem = null
+            pendingRequestedUris = mediaStoreUris
+            viewModelScope.launch {
+                _writePermissionRequest.emit(WritePermissionRequest(mediaStoreUris))
+            }
+            return
+        }
+
+        batchApplyCoverInternal(imageUris, mode)
+    }
+
+    /**
+     * 批量为选中文件添加封面（内部实现，权限已确认）
+     */
+    private fun batchApplyCoverInternal(imageUris: List<Uri>, mode: com.example.tagger.model.CoverAssignmentMode) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, showBatchCoverSheet = false)
 
+            val selectedUris = _uiState.value.selectedUris
             val selectedItems = _uiState.value.audioList.filter { it.uri in selectedUris }
             var successCount = 0
             var failCount = 0
@@ -1814,6 +1840,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             PendingWriteAction.REMOVE_SENSITIVE_WORDS -> removeSensitiveWordsFromFileNames()
             PendingWriteAction.SMART_REPLACE -> smartReplaceSelectedFileNames()
             PendingWriteAction.EXECUTE_PROCESS_SCHEME -> executeProcessScheme()
+            PendingWriteAction.BATCH_APPLY_COVER -> {
+                val coverUris = pendingBatchCoverUris
+                val coverMode = pendingBatchCoverMode
+                pendingBatchCoverUris = emptyList()
+                pendingBatchCoverMode = com.example.tagger.model.CoverAssignmentMode.SAME
+                if (coverUris.isNotEmpty()) {
+                    batchApplyCoverInternal(coverUris, coverMode)
+                }
+            }
         }
     }
 
@@ -1824,6 +1859,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pendingWriteAction = null
         pendingSaveItem = null
         pendingRequestedUris = emptyList()
+        pendingBatchCoverUris = emptyList()
+        pendingBatchCoverMode = com.example.tagger.model.CoverAssignmentMode.SAME
         _uiState.value = _uiState.value.copy(
             isLoading = false,
             message = "未获得写权限，无法修改文件"
@@ -1884,7 +1921,8 @@ private enum class PendingWriteAction {
     OPTIMIZE_FILE_NAMES,
     REMOVE_SENSITIVE_WORDS,
     SMART_REPLACE,
-    EXECUTE_PROCESS_SCHEME
+    EXECUTE_PROCESS_SCHEME,
+    BATCH_APPLY_COVER
 }
 
 /**

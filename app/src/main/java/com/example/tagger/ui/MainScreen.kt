@@ -188,37 +188,60 @@ fun MainScreen(
                         }
                     },
                     actions = {
-                        // 智能替换按钮
-                        TextButton(
-                            onClick = onSmartReplace,
+                        // 批量封面按钮
+                        IconButton(
+                            onClick = onShowBatchCoverSheet,
                             enabled = uiState.selectedUris.isNotEmpty()
                         ) {
-                            Text(
-                                "智能替换",
-                                color = if (uiState.selectedUris.isNotEmpty()) AppPrimaryColor
+                            Icon(
+                                imageVector = Icons.Outlined.Image,
+                                contentDescription = "批量封面",
+                                tint = if (uiState.selectedUris.isNotEmpty()) AppPrimaryColor
                                        else AppPrimaryColor.copy(alpha = 0.4f)
                             )
                         }
-                        // 删除违禁词按钮
-                        TextButton(
-                            onClick = onRemoveSensitiveWords,
-                            enabled = uiState.selectedUris.isNotEmpty()
-                        ) {
-                            Text(
-                                "删除",
-                                color = if (uiState.selectedUris.isNotEmpty()) AppPrimaryColor
-                                       else AppPrimaryColor.copy(alpha = 0.4f)
+                        // 更多操作菜单
+                        var showMoreMenu by remember { mutableStateOf(false) }
+                        IconButton(onClick = { showMoreMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "更多操作",
+                                tint = AppPrimaryColor
                             )
                         }
-                        // 优化违禁词按钮
-                        TextButton(
-                            onClick = onOptimizeSelected,
-                            enabled = uiState.selectedUris.isNotEmpty()
+                        DropdownMenu(
+                            expanded = showMoreMenu,
+                            onDismissRequest = { showMoreMenu = false }
                         ) {
-                            Text(
-                                "优化",
-                                color = if (uiState.selectedUris.isNotEmpty()) AppPrimaryColor
-                                       else AppPrimaryColor.copy(alpha = 0.4f)
+                            DropdownMenuItem(
+                                text = { Text("智能替换") },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onSmartReplace()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Outlined.Shield, null, tint = AppPrimaryColor)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("删除违禁词") },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onRemoveSensitiveWords()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Outlined.Delete, null, tint = AppPrimaryColor)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("优化违禁词") },
+                                onClick = {
+                                    showMoreMenu = false
+                                    onOptimizeSelected()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Build, null, tint = AppPrimaryColor)
+                                }
                             )
                         }
                         TextButton(onClick = onToggleSelectAll) {
@@ -396,35 +419,55 @@ fun MainScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
-                        // 同步修改歌曲名开关
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "同步修改歌曲名（title）",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Switch(
-                                checked = uiState.syncTitleWhenRename,
-                                onCheckedChange = { onToggleSyncTitle() },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = AppPrimaryColor,
-                                    checkedTrackColor = AppPrimaryColor.copy(alpha = 0.5f)
-                                )
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
+                        // 第一行：核心操作按钮
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
+                            // 智能替换按钮
+                            Button(
+                                onClick = onSmartReplace,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = AppPrimaryColor
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Shield,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("智能替换")
+                            }
+                            // 删除违禁词按钮
+                            OutlinedButton(
+                                onClick = onRemoveSensitiveWords,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Delete,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("删除违禁词")
+                            }
+                            // 优化违禁词按钮
+                            OutlinedButton(
+                                onClick = onOptimizeSelected,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Build,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("优化违禁词")
+                            }
                             // 用其他应用打开
                             OutlinedButton(
                                 onClick = onOpenWithExternalApp,
@@ -438,89 +481,62 @@ fun MainScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("打开")
                             }
-                        // 处理方案按钮
-                        OutlinedButton(
-                            onClick = onShowProcessScheme,
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(
-                                Icons.Outlined.Tune,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("处理方案")
+                            // 处理方案按钮
+                            OutlinedButton(
+                                onClick = onShowProcessScheme,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Tune,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("处理方案")
+                            }
                         }
-                        // 智能替换按钮
-                        Button(
-                            onClick = onSmartReplace,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = AppPrimaryColor
-                            ),
-                            shape = RoundedCornerShape(12.dp)
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // 第二行：同步修改歌曲名 Switch + 移除
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Outlined.Shield,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("智能替换")
-                        }
-                        // 删除违禁词按钮
-                        OutlinedButton(
-                            onClick = onRemoveSensitiveWords,
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(
-                                Icons.Outlined.Delete,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("删除违禁词")
-                        }
-                        // 优化违禁词按钮
-                        OutlinedButton(
-                            onClick = onOptimizeSelected,
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Build,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("优化违禁词")
-                        }
-                        // 移除按钮
-                        Button(
-                            onClick = onRemoveSelected,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(
-                                Icons.Outlined.Delete,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("移除")
-                        }
-                        // 批量封面按钮
-                        OutlinedButton(
-                            onClick = onShowBatchCoverSheet,
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(
-                                Icons.Outlined.Image,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("批量封面")
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Switch(
+                                    checked = uiState.syncTitleWhenRename,
+                                    onCheckedChange = { onToggleSyncTitle() },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = AppPrimaryColor,
+                                        checkedTrackColor = AppPrimaryColor.copy(alpha = 0.5f)
+                                    )
+                                )
+                                Text(
+                                    "同步修改歌曲名",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Button(
+                                onClick = onRemoveSelected,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.error
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Delete,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("移除")
+                            }
                         }
                     }
                 }
