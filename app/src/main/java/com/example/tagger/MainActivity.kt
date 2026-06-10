@@ -34,7 +34,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         // 版本标记 - 用于验证新版本正在运行
-        const val VERSION_TAG = "v0608c_player_button_sync"
+        const val VERSION_TAG = "v0608e_full_player"
         private const val TAG = "MainActivity"
     }
 
@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
         // 版本验证日志
         Log.d(TAG, "========== 版本检查 ==========")
         Log.d(TAG, "当前版本: $VERSION_TAG")
-        Log.d(TAG, "功能: 雷达重命名后保留MediaStore URI")
+        Log.d(TAG, "功能: Apple Music 风格全屏播放页")
         Log.d(TAG, "===============================")
 
         // 监听 MediaStore 写权限请求

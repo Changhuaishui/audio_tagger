@@ -2,6 +2,8 @@ package com.example.tagger.ui.player
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -11,6 +13,7 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,6 +27,8 @@ import com.example.tagger.ui.theme.AppleGray6
 
 /**
  * 底部迷你播放器
+ *
+ * @param onOpenFullPlayer 点击 MiniPlayer 非按钮区域打开全屏播放页
  */
 @Composable
 fun MiniPlayer(
@@ -32,6 +37,7 @@ fun MiniPlayer(
     onPlayNext: () -> Unit,
     onPlayPrevious: () -> Unit,
     onSeekTo: (Long) -> Unit,
+    onOpenFullPlayer: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val currentItem = playerState.currentItem ?: return
@@ -39,7 +45,12 @@ fun MiniPlayer(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(72.dp),
+            .height(72.dp)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onOpenFullPlayer
+            ),
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 3.dp,
         shadowElevation = 4.dp
@@ -99,7 +110,7 @@ fun MiniPlayer(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // 控制按钮
+            // 控制按钮（使用独立 Box + clickable 避免冒泡到父级 Surface）
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)

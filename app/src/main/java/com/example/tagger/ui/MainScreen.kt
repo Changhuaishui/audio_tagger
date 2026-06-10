@@ -43,6 +43,7 @@ import com.example.tagger.ui.theme.AppPrimaryColor
 import com.example.tagger.ui.theme.AppleGray1
 import com.example.tagger.ui.theme.AppleGray5
 import com.example.tagger.ui.theme.AppleGray6
+import com.example.tagger.ui.player.FullPlayerScreen
 import com.example.tagger.ui.player.MiniPlayer
 import com.example.tagger.ui.player.PlayerUiState
 import com.example.tagger.ui.video.ExtractionProgressDialog
@@ -122,6 +123,8 @@ fun MainScreen(
     onPlayPrevious: () -> Unit = {},
     onSeekTo: (Long) -> Unit = {}
 ) {
+    // 全屏播放器本地状态
+    var showFullPlayer by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     var showMenu by remember { mutableStateOf(false) }
     var showAddMenu by remember { mutableStateOf(false) }  // 右上角 + 按钮菜单
@@ -215,7 +218,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0608d]", // 版本标记 - 智能替换违禁词
+                            "音乐标签 [v0608e]", // 版本标记 - 全屏播放页
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
@@ -473,7 +476,8 @@ fun MainScreen(
                     onTogglePlayPause = onTogglePlayPause,
                     onPlayNext = onPlayNext,
                     onPlayPrevious = onPlayPrevious,
-                    onSeekTo = onSeekTo
+                    onSeekTo = onSeekTo,
+                    onOpenFullPlayer = { showFullPlayer = true }
                 )
             }
         },
@@ -647,6 +651,18 @@ fun MainScreen(
             currentMode = uiState.selectedObfuscationMode,
             onModeSelected = onSelectObfuscationMode,
             onDismiss = onDismissObfuscationMode
+        )
+    }
+
+    // 全屏播放器覆盖层
+    if (showFullPlayer && playerState.currentItem != null) {
+        FullPlayerScreen(
+            playerState = playerState,
+            onClose = { showFullPlayer = false },
+            onTogglePlayPause = onTogglePlayPause,
+            onPlayNext = onPlayNext,
+            onPlayPrevious = onPlayPrevious,
+            onSeekTo = onSeekTo
         )
     }
 }
