@@ -1,4 +1,4 @@
-package com.example.tagger.ui
+﻿package com.example.tagger.ui
 
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
@@ -46,6 +46,7 @@ import com.example.tagger.ui.theme.AppleGray6
 import com.example.tagger.ui.player.FullPlayerScreen
 import com.example.tagger.ui.player.MiniPlayer
 import com.example.tagger.ui.player.PlayerUiState
+import com.example.tagger.ui.player.PlaybackQueueSheet
 import com.example.tagger.ui.video.ExtractionProgressDialog
 import com.example.tagger.ui.video.FormatSelectorSheet
 import com.example.tagger.ui.video.VideoUiState
@@ -77,6 +78,10 @@ fun MainScreen(
     onOptimizeSelected: () -> Unit = {},  // 优化选中文件的违禁词
     onRemoveSensitiveWords: () -> Unit = {},  // 删除选中文件名的违禁词
     onSmartReplace: () -> Unit = {},  // 智能替换选中文件名的违禁词
+    onToggleSyncTitle: () -> Unit = {},  // 切换同步修改歌曲名开关
+    onShowBatchCoverSheet: () -> Unit = {},  // 显示批量封面弹窗
+    onDismissBatchCoverSheet: () -> Unit = {},  // 关闭批量封面弹窗
+    onBatchApplyCover: (List<Uri>, com.example.tagger.model.CoverAssignmentMode) -> Unit = { _, _ -> },  // 批量添加封面
     // 视频提取
     onSelectVideoFormat: (AudioFormat) -> Unit = {},
     onSelectVideoTrack: (Int) -> Unit = {},
@@ -122,10 +127,15 @@ fun MainScreen(
     onPlayNext: () -> Unit = {},
     onPlayPrevious: () -> Unit = {},
     onSeekTo: (Long) -> Unit = {},
-    onClearPlayerError: () -> Unit = {}
+    onClearPlayerError: () -> Unit = {},
+    onToggleShuffle: () -> Unit = {},
+    onCycleRepeat: () -> Unit = {},
+    onSeekToItem: (Int) -> Unit = {},
+    onRemoveFromQueue: (Int) -> Unit = {}
 ) {
     // 全屏播放器本地状态
     var showFullPlayer by remember { mutableStateOf(false) }
+    var showQueue by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     var showMenu by remember { mutableStateOf(false) }
     var showAddMenu by remember { mutableStateOf(false) }  // 右上角 + 按钮菜单
@@ -227,7 +237,7 @@ fun MainScreen(
                 LargeTopAppBar(
                     title = {
                         Text(
-                            "音乐标签 [v0610a]", // 版本标记 - 播放器优化（列表打开全屏、MiniPlayer 进度条、错误提示）
+                            "音乐标签 [v0610c]", // 版本标记 - 批量违禁词同步歌曲名 + 批量封面
                             style = MaterialTheme.typography.displaySmall
                         )
                     },
@@ -381,26 +391,53 @@ fun MainScreen(
                     color = MaterialTheme.colorScheme.surface,
                     tonalElevation = 3.dp
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
-                        // 用其他应用打开
-                        OutlinedButton(
-                            onClick = onOpenWithExternalApp,
-                            shape = RoundedCornerShape(12.dp)
+                        // 同步修改歌曲名开关
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Outlined.Share,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                            Text(
+                                "同步修改歌曲名（title）",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("打开")
+                            Switch(
+                                checked = uiState.syncTitleWhenRename,
+                                onCheckedChange = { onToggleSyncTitle() },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = AppPrimaryColor,
+                                    checkedTrackColor = AppPrimaryColor.copy(alpha = 0.5f)
+                                )
+                            )
                         }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // 用其他应用打开
+                            OutlinedButton(
+                                onClick = onOpenWithExternalApp,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Share,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("打开")
+                            }
                         // 处理方案按钮
                         OutlinedButton(
                             onClick = onShowProcessScheme,
@@ -472,8 +509,22 @@ fun MainScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("移除")
                         }
+                        // 批量封面按钮
+                        OutlinedButton(
+                            onClick = onShowBatchCoverSheet,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(
+                                Icons.Outlined.Image,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("批量封面")
+                        }
                     }
                 }
+            }
             }
 
             // 普通模式底部迷你播放器
@@ -645,6 +696,14 @@ fun MainScreen(
         )
     }
 
+    // 批量封面弹窗
+    if (uiState.showBatchCoverSheet) {
+        BatchCoverSheet(
+            onDismiss = onDismissBatchCoverSheet,
+            onApply = onBatchApplyCover
+        )
+    }
+
     // 替换规则管理弹窗
     if (uiState.showReplacementRulesSheet) {
         ReplacementRulesSheet(
@@ -673,7 +732,25 @@ fun MainScreen(
             onTogglePlayPause = onTogglePlayPause,
             onPlayNext = onPlayNext,
             onPlayPrevious = onPlayPrevious,
-            onSeekTo = onSeekTo
+            onSeekTo = onSeekTo,
+            onToggleShuffle = onToggleShuffle,
+            onCycleRepeat = onCycleRepeat,
+            onOpenQueue = { showQueue = true },
+            onSeekToItem = onSeekToItem
+        )
+    }
+
+    // 播放队列弹窗
+    if (showQueue) {
+        PlaybackQueueSheet(
+            playlist = playerState.playlist,
+            currentIndex = playerState.currentIndex,
+            onItemClick = { index ->
+                onSeekToItem(index)
+                showQueue = false
+            },
+            onRemoveItem = onRemoveFromQueue,
+            onDismiss = { showQueue = false }
         )
     }
 }

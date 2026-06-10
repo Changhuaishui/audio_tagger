@@ -34,7 +34,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         // 版本标记 - 用于验证新版本正在运行
-        const val VERSION_TAG = "v0610a_player_polish"
+        const val VERSION_TAG = "v0610c_batch_sync_cover"
         private const val TAG = "MainActivity"
     }
 
@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
         // 版本验证日志
         Log.d(TAG, "========== 版本检查 ==========")
         Log.d(TAG, "当前版本: $VERSION_TAG")
-        Log.d(TAG, "功能: 播放器优化（列表打开全屏、MiniPlayer 进度条、错误提示）")
+        Log.d(TAG, "功能: Blur 播放器 + 封面轮播 + 随机循环 + 播放队列")
         Log.d(TAG, "===============================")
 
         // 监听 MediaStore 写权限请求
@@ -170,6 +170,10 @@ class MainActivity : ComponentActivity() {
                         onOptimizeSelected = { viewModel.requestWritePermissionAndRename(PendingRenameAction.OPTIMIZE_FILE_NAMES) },
                         onRemoveSensitiveWords = { viewModel.requestWritePermissionAndRename(PendingRenameAction.REMOVE_SENSITIVE_WORDS) },
                         onSmartReplace = { viewModel.requestWritePermissionAndRename(PendingRenameAction.SMART_REPLACE) },
+                        onToggleSyncTitle = { viewModel.toggleSyncTitleWhenRename() },
+                        onShowBatchCoverSheet = { viewModel.showBatchCoverSheet(true) },
+                        onDismissBatchCoverSheet = { viewModel.showBatchCoverSheet(false) },
+                        onBatchApplyCover = { uris, mode -> viewModel.batchApplyCover(uris, mode) },
                         // 视频提取
                         onSelectVideoFormat = { videoViewModel.selectFormat(it) },
                         onSelectVideoTrack = { videoViewModel.selectTrack(it) },
@@ -234,7 +238,11 @@ class MainActivity : ComponentActivity() {
                         onPlayNext = { playerViewModel.playNext() },
                         onPlayPrevious = { playerViewModel.playPrevious() },
                         onSeekTo = { playerViewModel.seekTo(it) },
-                        onClearPlayerError = { playerViewModel.clearError() }
+                        onClearPlayerError = { playerViewModel.clearError() },
+                        onToggleShuffle = { playerViewModel.toggleShuffle() },
+                        onCycleRepeat = { playerViewModel.cycleRepeatMode() },
+                        onSeekToItem = { playerViewModel.seekToItem(it) },
+                        onRemoveFromQueue = { playerViewModel.removeFromPlaylist(it) }
                     )
                 }
             }

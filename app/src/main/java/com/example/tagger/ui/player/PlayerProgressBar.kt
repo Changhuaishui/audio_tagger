@@ -18,9 +18,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.example.tagger.ui.theme.AppPrimaryColor
-import com.example.tagger.ui.theme.AppleGray1
 
 /**
  * 格式化毫秒为 mm:ss 显示字符串
@@ -41,7 +40,11 @@ fun PlayerProgressBar(
     currentPosition: Long,
     duration: Long,
     onSeekTo: (Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    activeTrackColor: Color = MaterialTheme.colorScheme.primary,
+    thumbColor: Color = MaterialTheme.colorScheme.primary,
+    trackColor: Color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+    timeColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
 ) {
     val safeDuration = duration.coerceAtLeast(0L)
     val safePosition = currentPosition.coerceIn(0L, safeDuration)
@@ -84,9 +87,9 @@ fun PlayerProgressBar(
             },
             modifier = Modifier.fillMaxWidth(),
             colors = SliderDefaults.colors(
-                thumbColor = AppPrimaryColor,
-                activeTrackColor = AppPrimaryColor,
-                inactiveTrackColor = AppleGray1.copy(alpha = 0.3f)
+                thumbColor = thumbColor,
+                activeTrackColor = activeTrackColor,
+                inactiveTrackColor = trackColor
             )
         )
 
@@ -101,12 +104,12 @@ fun PlayerProgressBar(
             Text(
                 text = formatDurationMs(displayPosition),
                 style = MaterialTheme.typography.labelMedium,
-                color = AppleGray1
+                color = timeColor
             )
             Text(
                 text = formatDurationMs(safeDuration),
                 style = MaterialTheme.typography.labelMedium,
-                color = AppleGray1
+                color = timeColor
             )
         }
     }

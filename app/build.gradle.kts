@@ -92,6 +92,9 @@ dependencies {
     // Media3 ExoPlayer
     implementation(libs.androidx.media3.exoplayer)
 
+    // Palette for dynamic color extraction from album art
+    implementation("androidx.palette:palette:1.0.0")
+
     // Pinyin4j for Chinese pinyin conversion (sensitive word detection)
     implementation(libs.pinyin4j)
 

@@ -69,6 +69,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 _uiState.value = _uiState.value.copy(errorMessage = message)
             }
+
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                _uiState.value = _uiState.value.copy(shuffleMode = shuffleModeEnabled)
+            }
+
+            override fun onRepeatModeChanged(repeatMode: Int) {
+                _uiState.value = _uiState.value.copy(repeatMode = repeatMode)
+            }
         })
 
         // 启动进度更新协程
@@ -135,7 +143,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             playlist = list,
             currentIndex = startIndex,
             currentItem = list.getOrNull(startIndex),
-            isPlaying = true
+            isPlaying = true,
+            shuffleMode = exoPlayer.shuffleModeEnabled,
+            repeatMode = exoPlayer.repeatMode
         )
 
         Log.d(TAG, "设置播放列表: ${list.size} 首, 开始播放第 $startIndex 首")
@@ -162,7 +172,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (exoPlayer.hasNextMediaItem()) {
             exoPlayer.seekToNext()
         } else {
-            // 列表循环：回到第一首
             if (_uiState.value.playlist.isNotEmpty()) {
                 exoPlayer.seekTo(0, 0L)
                 exoPlayer.play()
@@ -177,7 +186,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (exoPlayer.hasPreviousMediaItem()) {
             exoPlayer.seekToPrevious()
         } else {
-            // 列表循环：回到最后一首
             val lastIndex = (_uiState.value.playlist.size - 1).coerceAtLeast(0)
             exoPlayer.seekTo(lastIndex, 0L)
             exoPlayer.play()
@@ -190,6 +198,46 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun seekTo(positionMs: Long) {
         exoPlayer.seekTo(positionMs.coerceAtLeast(0L))
         _uiState.value = _uiState.value.copy(currentPosition = positionMs.coerceAtLeast(0L))
+    }
+
+    /**
+     * 跳转到播放列表指定项
+     */
+    fun seekToItem(index: Int) {
+        if (index in _uiState.value.playlist.indices) {
+            exoPlayer.seekTo(index, 0L)
+            exoPlayer.play()
+        }
+    }
+
+    /**
+     * 切换随机播放
+     */
+    fun toggleShuffle() {
+        exoPlayer.shuffleModeEnabled = !exoPlayer.shuffleModeEnabled
+    }
+
+    /**
+     * 切换循环模式：OFF -> ALL -> ONE -> OFF
+     */
+    fun cycleRepeatMode() {
+        val next = when (exoPlayer.repeatMode) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+        exoPlayer.repeatMode = next
+    }
+
+    /**
+     * 从播放队列移除某一项
+     */
+    fun removeFromPlaylist(index: Int) {
+        if (index in _uiState.value.playlist.indices) {
+            exoPlayer.removeMediaItem(index)
+            val newPlaylist = _uiState.value.playlist.toMutableList().apply { removeAt(index) }
+            _uiState.value = _uiState.value.copy(playlist = newPlaylist)
+        }
     }
 
     override fun onCleared() {

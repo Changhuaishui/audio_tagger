@@ -1,5 +1,6 @@
 package com.example.tagger.ui.player
 
+import androidx.media3.common.Player
 import com.example.tagger.model.AudioMetadata
 
 /**
@@ -13,5 +14,8 @@ data class PlayerUiState(
     val currentPosition: Long = 0L,
     val duration: Long = 0L,
     val isBuffering: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    // 播放模式
+    val shuffleMode: Boolean = false,
+    val repeatMode: Int = Player.REPEAT_MODE_OFF
 )

@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.MediaStore
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.tagger.core.FileNameOptimizer
@@ -61,7 +62,11 @@ data class MainUiState(
     val selectedObfuscationMode: ObfuscationMode? = null,
     val useReplacement: Boolean = false,
     val useObfuscation: Boolean = false,
-    val saveMapping: Boolean = true
+    val saveMapping: Boolean = true,
+    // 批量重命名时同步修改 tag 中的歌曲名（title）
+    val syncTitleWhenRename: Boolean = false,
+    // 批量封面选择弹窗
+    val showBatchCoverSheet: Boolean = false
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -437,6 +442,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
+     * 切换"同步修改歌曲名"开关
+     */
+    fun toggleSyncTitleWhenRename() {
+        _uiState.value = _uiState.value.copy(
+            syncTitleWhenRename = !_uiState.value.syncTitleWhenRename
+        )
+    }
+
+    /**
+     * 显示/隐藏批量封面弹窗
+     */
+    fun showBatchCoverSheet(show: Boolean) {
+        _uiState.value = _uiState.value.copy(showBatchCoverSheet = show)
+    }
+
+    /**
      * 切换单个项目的选中状态
      */
     fun toggleItemSelection(item: AudioMetadata) {
@@ -484,7 +505,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * 批量删除选中文件名中的违禁词（纯删除，不做对调/分隔符）
      *
-     * 注意：此功能只修改文件名，不修改文件内的元数据标签。
+     * 注意：默认只修改文件名。若开启 [syncTitleWhenRename]，会同步将处理后的名称写入 title 标签。
      */
     fun removeSensitiveWordsFromFileNames() {
         val selectedUris = _uiState.value.selectedUris
@@ -499,8 +520,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val selectedItems = _uiState.value.audioList.filter { it.uri in selectedUris }
             var removedCount = 0
             var skippedCount = 0
+            var tagSyncCount = 0
             val failedItems = mutableListOf<Pair<String, String>>()
             val updatedList = _uiState.value.audioList.toMutableList()
+            val syncTitle = _uiState.value.syncTitleWhenRename
 
             for (item in selectedItems) {
                 try {
@@ -517,15 +540,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     when (renameResult) {
                         is RenameResult.Success -> {
-                            // 只更新 uri、displayName、filePath，不重新读取 tag
                             val index = updatedList.indexOfFirst { it.uri == item.uri }
                             if (index >= 0) {
                                 val oldItem = updatedList[index]
-                                updatedList[index] = oldItem.copy(
+                                val newTitle = result.optimizedName.substringBeforeLast('.', result.optimizedName)
+                                var updatedItem = oldItem.copy(
                                     uri = renameResult.newUri,
                                     displayName = result.optimizedName,
                                     filePath = oldItem.filePath
                                 )
+                                if (syncTitle && newTitle != oldItem.title) {
+                                    updatedItem = updatedItem.copy(title = newTitle)
+                                    val writeResult = withContext(Dispatchers.IO) {
+                                        tagEditor.writeToUri(renameResult.newUri, updatedItem)
+                                    }
+                                    if (writeResult is WriteResult.Success || writeResult is WriteResult.PartialSuccess) {
+                                        tagSyncCount++
+                                    }
+                                }
+                                updatedList[index] = updatedItem
                             }
                             removedCount++
                         }
@@ -544,6 +577,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val message = buildString {
                 if (removedCount > 0) {
                     append("已删除 $removedCount 个文件名中的违禁词")
+                }
+                if (tagSyncCount > 0) {
+                    if (isNotEmpty()) append("，")
+                    append("同步更新 $tagSyncCount 个歌曲名")
                 }
                 if (skippedCount > 0) {
                     if (isNotEmpty()) append("，")
@@ -582,8 +619,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * 2. 插入分隔符: "敏感" → "敏_感"
      * 3. 删除违禁词
      *
-     * 注意：此功能只修改文件名，不修改文件内的元数据标签。
-     * 这样可以绕过平台的文件名检测，同时保留歌曲的原始标题信息。
+     * 注意：默认只修改文件名。若开启 [syncTitleWhenRename]，会同步将处理后的名称写入 title 标签。
      */
     fun optimizeSelectedFileNames() {
         val selectedUris = _uiState.value.selectedUris
@@ -597,17 +633,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             val selectedItems = _uiState.value.audioList.filter { it.uri in selectedUris }
             var optimizedCount = 0
-            var skippedCount = 0  // 无需优化的文件
-            val failedItems = mutableListOf<Pair<String, String>>()  // 文件名 -> 错误原因
+            var skippedCount = 0
+            var tagSyncCount = 0
+            val failedItems = mutableListOf<Pair<String, String>>()
             val updatedList = _uiState.value.audioList.toMutableList()
+            val syncTitle = _uiState.value.syncTitleWhenRename
 
             for (item in selectedItems) {
                 try {
-                    // 获取文件名（不含扩展名）
                     val nameWithoutExt = item.displayName.substringBeforeLast('.', item.displayName)
                     val extension = item.displayName.substringAfterLast('.', "")
 
-                    // 优化文件名
                     val result = fileNameOptimizer.optimize(nameWithoutExt)
 
                     if (!result.isChanged) {
@@ -615,33 +651,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         continue
                     }
 
-                    // 构建新文件名
                     val newDisplayName = if (extension.isNotEmpty()) {
                         "${result.optimizedName}.$extension"
                     } else {
                         result.optimizedName
                     }
 
-                    // 执行重命名（只改文件名，不改元数据）
                     val renameResult = withContext(Dispatchers.IO) {
                         tagEditor.renameFile(item.uri, newDisplayName)
                     }
 
                     when (renameResult) {
                         is RenameResult.Success -> {
-                            // 重新读取文件信息
-                            val updatedItem = withContext(Dispatchers.IO) {
-                                tagEditor.readFromUri(renameResult.newUri)
-                            }
-                            if (updatedItem != null) {
-                                val index = updatedList.indexOfFirst { it.uri == item.uri }
-                                if (index >= 0) {
-                                    updatedList[index] = updatedItem
+                            val index = updatedList.indexOfFirst { it.uri == item.uri }
+                            if (index >= 0) {
+                                val oldItem = updatedList[index]
+                                val newTitle = newDisplayName.substringBeforeLast('.', newDisplayName)
+                                var updatedItem: AudioMetadata
+                                if (syncTitle) {
+                                    updatedItem = oldItem.copy(
+                                        uri = renameResult.newUri,
+                                        displayName = newDisplayName,
+                                        filePath = oldItem.filePath
+                                    )
+                                    if (newTitle != oldItem.title) {
+                                        updatedItem = updatedItem.copy(title = newTitle)
+                                        val writeResult = withContext(Dispatchers.IO) {
+                                            tagEditor.writeToUri(renameResult.newUri, updatedItem)
+                                        }
+                                        if (writeResult is WriteResult.Success || writeResult is WriteResult.PartialSuccess) {
+                                            tagSyncCount++
+                                        }
+                                    }
+                                } else {
+                                    // 未开启同步时，重新读取文件以保持 tag 最新
+                                    updatedItem = withContext(Dispatchers.IO) {
+                                        tagEditor.readFromUri(renameResult.newUri)
+                                    } ?: oldItem.copy(
+                                        uri = renameResult.newUri,
+                                        displayName = newDisplayName,
+                                        filePath = oldItem.filePath
+                                    )
                                 }
-                                optimizedCount++
-                            } else {
-                                failedItems.add(item.displayName to "重命名后无法读取文件")
+                                updatedList[index] = updatedItem
                             }
+                            optimizedCount++
                         }
                         is RenameResult.Error -> {
                             failedItems.add(item.displayName to renameResult.message)
@@ -658,6 +712,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val message = buildString {
                 if (optimizedCount > 0) {
                     append("✓ 已优化 $optimizedCount 个文件名")
+                }
+                if (tagSyncCount > 0) {
+                    if (isNotEmpty()) append("，")
+                    append("同步更新 $tagSyncCount 个歌曲名")
                 }
                 if (skippedCount > 0) {
                     if (isNotEmpty()) append("，")
@@ -690,6 +748,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * 智能替换选中文件名中的违禁词（意会/拼音/相近字/语序）
+     *
+     * 注意：默认只修改文件名。若开启 [syncTitleWhenRename]，会同步将处理后的名称写入 title 标签。
      */
     fun smartReplaceSelectedFileNames() {
         val selectedUris = _uiState.value.selectedUris
@@ -704,8 +764,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val selectedItems = _uiState.value.audioList.filter { it.uri in selectedUris }
             var replacedCount = 0
             var skippedCount = 0
+            var tagSyncCount = 0
             val failedItems = mutableListOf<Pair<String, String>>()
             val updatedList = _uiState.value.audioList.toMutableList()
+            val syncTitle = _uiState.value.syncTitleWhenRename
 
             for (item in selectedItems) {
                 try {
@@ -725,11 +787,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             val index = updatedList.indexOfFirst { it.uri == item.uri }
                             if (index >= 0) {
                                 val oldItem = updatedList[index]
-                                updatedList[index] = oldItem.copy(
+                                val newTitle = result.optimizedName.substringBeforeLast('.', result.optimizedName)
+                                var updatedItem = oldItem.copy(
                                     uri = renameResult.newUri,
                                     displayName = result.optimizedName,
                                     filePath = oldItem.filePath
                                 )
+                                if (syncTitle && newTitle != oldItem.title) {
+                                    updatedItem = updatedItem.copy(title = newTitle)
+                                    val writeResult = withContext(Dispatchers.IO) {
+                                        tagEditor.writeToUri(renameResult.newUri, updatedItem)
+                                    }
+                                    if (writeResult is WriteResult.Success || writeResult is WriteResult.PartialSuccess) {
+                                        tagSyncCount++
+                                    }
+                                }
+                                updatedList[index] = updatedItem
                             }
                             replacedCount++
                         }
@@ -749,6 +822,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (replacedCount > 0) {
                     append("已智能替换 $replacedCount 个文件名中的违禁词")
                 }
+                if (tagSyncCount > 0) {
+                    if (isNotEmpty()) append("，")
+                    append("同步更新 $tagSyncCount 个歌曲名")
+                }
                 if (skippedCount > 0) {
                     if (isNotEmpty()) append("，")
                     append("$skippedCount 个无需处理")
@@ -765,6 +842,105 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 if (replacedCount == 0 && skippedCount == 0 && failedItems.isEmpty()) {
                     append("选中文件名未发现违禁词")
+                }
+            }
+
+            _uiState.value = _uiState.value.copy(
+                audioList = updatedList,
+                selectedUris = emptySet(),
+                isSelectionMode = false,
+                isLoading = false,
+                message = message
+            )
+        }
+    }
+
+    /**
+     * 批量为选中文件添加封面
+     *
+     * @param imageUris 选择的图片 URI 列表
+     * @param mode 封面分配策略
+     */
+    fun batchApplyCover(imageUris: List<Uri>, mode: com.example.tagger.model.CoverAssignmentMode) {
+        val selectedUris = _uiState.value.selectedUris
+        if (selectedUris.isEmpty()) {
+            _uiState.value = _uiState.value.copy(message = "请先选择音频文件")
+            return
+        }
+        if (imageUris.isEmpty()) {
+            _uiState.value = _uiState.value.copy(message = "请先选择图片")
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, showBatchCoverSheet = false)
+
+            val selectedItems = _uiState.value.audioList.filter { it.uri in selectedUris }
+            var successCount = 0
+            var failCount = 0
+            val updatedList = _uiState.value.audioList.toMutableList()
+            val random = java.util.Random()
+
+            // 预加载所有图片数据
+            val coverDataList = withContext(Dispatchers.IO) {
+                imageUris.mapNotNull { uri ->
+                    tagEditor.loadCoverFromUri(uri)?.let { (bitmap, bytes, mimeType) ->
+                        com.example.tagger.model.CoverArt(bytes, mimeType) to bitmap
+                    }
+                }
+            }
+
+            if (coverDataList.isEmpty()) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    message = "无法加载选择的图片"
+                )
+                return@launch
+            }
+
+            for ((index, item) in selectedItems.withIndex()) {
+                try {
+                    val coverPair = when (mode) {
+                        com.example.tagger.model.CoverAssignmentMode.SAME -> coverDataList.first()
+                        com.example.tagger.model.CoverAssignmentMode.SEQUENTIAL -> coverDataList[index % coverDataList.size]
+                        com.example.tagger.model.CoverAssignmentMode.RANDOM -> coverDataList[random.nextInt(coverDataList.size)]
+                    }
+                    val (coverArt, bitmap) = coverPair
+
+                    val updatedItem = item.copy(
+                        cover = coverArt,
+                        coverArt = bitmap,
+                        coverArtBytes = coverArt.bytes,
+                        coverArtMimeType = coverArt.mimeType
+                    )
+
+                    val writeResult = withContext(Dispatchers.IO) {
+                        tagEditor.writeToUri(item.uri, updatedItem)
+                    }
+
+                    when (writeResult) {
+                        is WriteResult.Success,
+                        is WriteResult.PartialSuccess -> {
+                            val listIndex = updatedList.indexOfFirst { it.uri == item.uri }
+                            if (listIndex >= 0) {
+                                updatedList[listIndex] = updatedItem
+                            }
+                            successCount++
+                        }
+                        is WriteResult.Error -> {
+                            failCount++
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("MainViewModel", "批量添加封面失败: ${item.displayName}", e)
+                    failCount++
+                }
+            }
+
+            val message = buildString {
+                append("已添加封面 $successCount 个")
+                if (failCount > 0) {
+                    append("，$failCount 个失败")
                 }
             }
 
