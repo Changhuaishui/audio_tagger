@@ -541,7 +541,6 @@ fun MainScreen(
                     }
                 }
             }
-            }
 
             // 普通模式底部迷你播放器
             AnimatedVisibility(

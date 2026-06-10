@@ -13,3 +13,4 @@ local.properties
 # Claude Code temp files
 tmpclaude-*-cwd
 tmpclaude-*
+.claude/
